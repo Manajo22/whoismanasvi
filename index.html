@@ -1,262 +1,1025 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Diary of Things Unsaid</title>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>diary entries</title>
+<style>
+/* ══════════════════════════════════════════════
+   BASE
+══════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,300;0,400;1,300;1,400&display=swap');
 
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            background: #050505;
-            color: #d1d1d1;
-            font-family: 'Courier New', Courier, monospace;
-            overflow: hidden;
-            cursor: none; /* Hide cursor for immersion */
-        }
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#000; }
+body { font-family:'EB Garamond', Georgia, serif; }
 
-        #ui-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 10;
-            pointer-events: none;
-            transition: opacity 2s ease;
-        }
+/* The p5 canvas sits here (z:1) */
+canvas { position:fixed; top:0; left:0; z-index:1; }
 
-        #instruction {
-            text-align: center;
-            max-width: 400px;
-            font-size: 1.1rem;
-            letter-spacing: 0.1rem;
-            line-height: 1.6;
-        }
+/* ══════════════════════════════════════════════
+   VEIL — scene transition fade
+══════════════════════════════════════════════ */
+#veil {
+  position:fixed; inset:0; background:#000;
+  opacity:0; pointer-events:none;
+  z-index:300; transition:opacity 0.65s ease;
+}
+#veil.on { opacity:1; pointer-events:all; }
 
-        .trigger {
-            margin-top: 40px;
-            text-decoration: underline;
-            cursor: pointer;
-            pointer-events: auto;
-            opacity: 0.5;
-            transition: opacity 0.5s;
-        }
+/* ══════════════════════════════════════════════
+   WEBCAM PREVIEW
+══════════════════════════════════════════════ */
+#webcam {
+  position:fixed; bottom:20px; right:20px;
+  width:128px; height:92px; object-fit:cover;
+  border-radius:5px; opacity:0.16;
+  transform:scaleX(-1); z-index:50;
+  transition:opacity 0.3s;
+}
+#webcam:hover { opacity:0.42; }
 
-        .trigger:hover { opacity: 1; }
+/* ══════════════════════════════════════════════
+   UI LAYER
+══════════════════════════════════════════════ */
+#ui {
+  position:fixed; inset:0; z-index:10;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  pointer-events:none;
+}
 
-        #reflection-output {
-            display: none;
-            position: absolute;
-            width: 60%;
-            text-align: left;
-            font-style: italic;
-            color: #888;
-        }
+/* Scene label top-center */
+#scene-label {
+  position:fixed; top:30px; left:50%;
+  transform:translateX(-50%);
+  font-size:11px; letter-spacing:0.38em;
+  text-transform:uppercase; font-style:italic;
+  color:rgba(255,255,255,0.24);
+  white-space:nowrap;
+  transition:opacity 0.8s;
+}
 
-        canvas { display: block; }
+/* Intro block */
+#intro-text {
+  text-align:center; padding:0 52px;
+  max-width:560px;
+  transition:opacity 1s ease;
+}
+#intro-text h1 {
+  font-size:clamp(17px, 2.6vw, 27px);
+  font-weight:300; font-style:italic;
+  line-height:1.82; letter-spacing:0.03em;
+  color:rgba(255,255,255,0.72);
+  margin-bottom:52px;
+}
+#begin-btn {
+  display:inline-block;
+  font-size:11px; letter-spacing:0.5em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.28);
+  cursor:pointer; pointer-events:all;
+  border-bottom:1px solid rgba(255,255,255,0.1);
+  padding-bottom:3px;
+  transition:color 0.4s, border-color 0.4s;
+}
+#begin-btn:hover {
+  color:rgba(255,255,255,0.72);
+  border-color:rgba(255,255,255,0.38);
+}
 
-        #webcam-container {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            opacity: 0.1; /* Barely visible debug view */
-            transform: scaleX(-1);
-            width: 120px;
-        }
-    </style>
+/* Scene instruction */
+#hint {
+  position:fixed; bottom:56px; left:50%;
+  transform:translateX(-50%);
+  font-size:12.5px; letter-spacing:0.18em;
+  font-style:italic;
+  color:rgba(255,255,255,0.18);
+  text-align:center; max-width:400px;
+  white-space:nowrap;
+  pointer-events:none;
+  transition:opacity 0.9s;
+}
+
+/* ══════════════════════════════════════════════
+   PROGRESS DOTS
+══════════════════════════════════════════════ */
+#dots {
+  position:fixed; bottom:28px; left:50%;
+  transform:translateX(-50%);
+  display:flex; gap:11px; z-index:10;
+}
+.dot {
+  width:4px; height:4px; border-radius:50%;
+  background:rgba(255,255,255,0.16);
+  transition:background 0.5s, transform 0.35s;
+}
+.dot.active {
+  background:rgba(255,255,255,0.68);
+  transform:scale(1.5);
+}
+
+/* ══════════════════════════════════════════════
+   REFLECTION OVERLAY
+══════════════════════════════════════════════ */
+#ref-overlay {
+  position:fixed; inset:0; z-index:250;
+  background:rgba(0,0,0,0);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition:opacity 2s ease, background 2.5s ease;
+}
+#ref-overlay.show {
+  opacity:1; pointer-events:all;
+  background:rgba(0,0,0,0.9);
+}
+#ref-inner {
+  max-width:500px; padding:64px 44px;
+  text-align:center;
+}
+#ref-text {
+  font-size:clamp(15px, 1.9vw, 20px);
+  font-weight:300; font-style:italic;
+  line-height:2.0; letter-spacing:0.025em;
+  color:rgba(255,255,255,0.65);
+  min-height:100px;
+}
+#ref-loading {
+  display:block;
+  font-size:11px; letter-spacing:0.4em;
+  color:rgba(255,255,255,0.22);
+  text-transform:uppercase; font-style:normal;
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity:0.22; }
+  50% { opacity:0.55; }
+}
+#ref-footer {
+  margin-top:56px; font-size:11px;
+  letter-spacing:0.32em; text-transform:uppercase;
+  color:rgba(255,255,255,0.12); font-style:normal;
+}
+#ref-replay {
+  display:inline-block; margin-top:24px;
+  font-size:10px; letter-spacing:0.45em;
+  text-transform:uppercase; font-style:normal;
+  color:rgba(255,255,255,0.18); cursor:pointer;
+  border-bottom:1px solid rgba(255,255,255,0.07);
+  padding-bottom:2px;
+  transition:color 0.4s;
+}
+#ref-replay:hover { color:rgba(255,255,255,0.48); }
+
+/* ══════════════════════════════════════════════
+   SCENE QUOTE — small ephemeral text
+══════════════════════════════════════════════ */
+#scene-quote {
+  position:fixed; top:50%; left:50%;
+  transform:translate(-50%, -50%);
+  font-size:clamp(13px, 1.6vw, 16px);
+  font-style:italic; font-weight:300;
+  letter-spacing:0.05em; line-height:1.7;
+  color:rgba(255,255,255,0);
+  text-align:center; max-width:420px;
+  pointer-events:none; z-index:8;
+  transition:color 3s ease;
+}
+#scene-quote.show { color:rgba(255,255,255,0.22); }
+</style>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div id="instruction">
-            <div id="text-content">These are things I wrote down. They don’t make sense unless you try them.</div>
-            <div id="action-btn" class="trigger" onclick="nextScene()">Begin</div>
-        </div>
-        <div id="reflection-output"></div>
-    </div>
+<!-- Transition veil -->
+<div id="veil"></div>
 
-    <video id="webcam" autoplay playsinline style="display:none"></video>
+<!-- Webcam -->
+<video id="webcam" autoplay playsinline muted></video>
 
-    <script>
-        // --- CONFIG & STATE ---
-        let currentState = 0; // 0: Intro, 1: Control, 2: Perspective, 3: Lightness, 4: Avoidance, 5: Ending
-        const scenes = [
-            { txt: "These are things I wrote down. They don’t make sense unless you try them.", btn: "Begin" },
-            { txt: "The more tightly you try to hold on, the more things go haywire.", btn: "I understand" },
-            { txt: "When things don’t make sense, shift perspective.", btn: "Look closer" },
-            { txt: "Take things lightly.", btn: "Release" },
-            { txt: "Stop avoiding the inevitable.", btn: "Face it" },
-            { txt: "Processing the residue...", btn: "" }
-        ];
+<!-- UI -->
+<div id="ui">
+  <div id="scene-label"></div>
+  <div id="intro-text">
+    <h1>These are things I wrote down.<br>They don't make sense<br>unless you try them.</h1>
+    <div id="begin-btn">begin</div>
+  </div>
+  <div id="hint"></div>
+</div>
 
-        let userStats = { clenchCount: 0, shifts: 0, smileTime: 0, hits: 0 };
-        let particles = [];
-        let handLandmarker, faceLandmarker;
-        let video;
-        let lastVideoTime = -1;
+<!-- Ephemeral scene quote -->
+<div id="scene-quote"></div>
 
-        // --- MEDIAPIPE SETUP ---
-        async function initAI() {
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm");
-            
-            handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task` },
-                runningMode: "VIDEO", numHands: 1
-            });
+<!-- Progress dots -->
+<div id="dots">
+  <div class="dot" id="dot-0"></div>
+  <div class="dot" id="dot-1"></div>
+  <div class="dot" id="dot-2"></div>
+  <div class="dot" id="dot-3"></div>
+</div>
 
-            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task` },
-                runningMode: "VIDEO", outputFaceBlendshapes: true
-            });
+<!-- Reflection card -->
+<div id="ref-overlay">
+  <div id="ref-inner">
+    <p id="ref-text"><span id="ref-loading">reading between the lines —</span></p>
+    <div id="ref-footer">close your eyes. then open them.</div>
+    <div id="ref-replay" onclick="location.reload()">again</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ LIBRARIES ═══════════════════ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════════════
+   ① CONFIG — replace YOUR_GEMINI_API_KEY
+══════════════════════════════════════════════════════ */
+const CFG = {
+  GEMINI_KEY  : 'YOUR_GEMINI_API_KEY',
+  GEMINI_MODEL: 'gemini-2.0-flash',
+
+  // How long each scene lasts (frames at ~60fps)
+  SCENE_DUR: {
+    control    : 660,   // ~11s
+    perspective: 660,
+    lightness  : 660,
+    avoidance  : 540    // ~9s
+  }
+};
+
+/* ══════════════════════════════════════════════════════
+   ② GLOBAL STATE
+══════════════════════════════════════════════════════ */
+const S = {
+  scene     : 'intro',
+  sceneFrame: 0,
+
+  // ── Gesture inputs (written by MediaPipe, read by p5) ──
+  fist  : 0,      // 0 = open hand … 1 = full fist
+  headX : 0,      // −1 (left) … +1 (right)
+  headY : 0,      // −1 (up)   … +1 (down)
+  smile : 0,      // 0 = neutral … 1 = big smile
+  hand  : null,   // {x,y} in screen pixels, or null
+
+  // ── Analytics for Gemini ──
+  fistSum : 0, fistN : 0,
+  perspSum: 0, perspN: 0,
+  smileSum: 0, smileN: 0,
+  catches : 0, misses: 0,
+};
+
+/* ══════════════════════════════════════════════════════
+   ③ SCENE METADATA
+══════════════════════════════════════════════════════ */
+const SCENE_ORDER = ['intro','control','perspective','lightness','avoidance','ending'];
+
+const SCENE_LABELS = {
+  control    : 'I  ·  control',
+  perspective: 'II  ·  perspective',
+  lightness  : 'III  ·  lightness',
+  avoidance  : 'IV  ·  avoidance',
+};
+const SCENE_QUOTES = {
+  control    : '"the more tightly you hold on, the more things go haywire"',
+  perspective: '"when things don\'t make sense, shift perspective"',
+  lightness  : '"take things lightly"',
+  avoidance  : '"stop avoiding the inevitable"',
+};
+const SCENE_HINTS = {
+  control    : 'close your hand — then open it',
+  perspective: 'move your head slowly from side to side',
+  lightness  : 'let yourself smile',
+  avoidance  : 'reach out and catch what comes',
+};
+
+/* ══════════════════════════════════════════════════════
+   ④ MEDIAPIPE
+══════════════════════════════════════════════════════ */
+let mpHands, mpFace, mpCam;
+
+function initMediaPipe() {
+  const video = document.getElementById('webcam');
+
+  // ── Hands (used in scenes 1 & 4) ──────────────
+  mpHands = new Hands({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  mpHands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence : 0.5
+  });
+  mpHands.onResults(results => {
+    if (results.multiHandLandmarks?.length) {
+      const lm  = results.multiHandLandmarks[0];
+      S.fist = calcFist(lm);
+      // Use middle-finger MCP (9) as palm center; mirror X for selfie view
+      const palm = lm[9];
+      S.hand = { x: (1 - palm.x) * innerWidth, y: palm.y * innerHeight };
+    } else {
+      S.fist = 0;
+      S.hand = null;
+    }
+  });
+
+  // ── Face Mesh (used in scenes 2 & 3) ──────────
+  mpFace = new FaceMesh({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+  });
+  mpFace.setOptions({
+    maxNumFaces           : 1,
+    refineLandmarks       : true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence : 0.5
+  });
+  mpFace.onResults(results => {
+    if (results.multiFaceLandmarks?.length) {
+      const lm  = results.multiFaceLandmarks[0];
+      const nose = lm[1];
+      S.headX =  -(nose.x - 0.5) * 2;   // mirrored → left is negative
+      S.headY =   (nose.y - 0.46) * 2;
+      S.smile = calcSmile(lm);
+    } else {
+      S.headX = 0; S.headY = 0; S.smile = 0;
+    }
+  });
+
+  // ── Shared camera feed ─────────────────────────
+  mpCam = new Camera(video, {
+    onFrame: async () => {
+      const sc = S.scene;
+      if (sc === 'control' || sc === 'avoidance') {
+        await mpHands.send({ image: video });
+      } else if (sc === 'perspective' || sc === 'lightness') {
+        await mpFace.send({ image: video });
+      }
+    },
+    width: 640, height: 480
+  });
+  mpCam.start().catch(err => console.warn('Camera start failed:', err));
+}
+
+// ── Gesture calculators ───────────────────────────
+
+/** Returns 0 (open) → 1 (full fist)
+ *  Logic: in normalised MediaPipe coords, y increases downward.
+ *  A curled finger has its tip BELOW its PIP joint → tip.y > pip.y. */
+function calcFist(lm) {
+  const pairs = [[8,6],[12,10],[16,14],[20,18]]; // [tip, pip]
+  const curled = pairs.filter(([tip, pip]) => lm[tip].y > lm[pip].y).length;
+  return curled / 4;
+}
+
+/** Returns 0 (neutral) → 1 (big smile)
+ *  Uses ratio of mouth width to mouth opening height. */
+function calcSmile(lm) {
+  const mw    = Math.abs(lm[291].x - lm[61].x);     // corner to corner
+  const mh    = Math.abs(lm[14].y  - lm[13].y) + 0.001; // lip open
+  const ratio = mw / mh;
+  // neutral ≈ 2, gentle smile ≈ 4, big smile ≈ 7+
+  return Math.max(0, Math.min(1, (ratio - 2.0) / 5.0));
+}
+
+/* ══════════════════════════════════════════════════════
+   ⑤ SCENE TRANSITIONS & UI
+══════════════════════════════════════════════════════ */
+function goScene(name) {
+  const veil = document.getElementById('veil');
+  veil.classList.add('on');
+
+  setTimeout(() => {
+    S.scene      = name;
+    S.sceneFrame = 0;
+    updateUI(name);
+    setTimeout(() => veil.classList.remove('on'), 200);
+  }, 660);
+}
+
+function updateUI(name) {
+  document.getElementById('scene-label').textContent = SCENE_LABELS[name] || '';
+  document.getElementById('hint').textContent        = SCENE_HINTS[name]  || '';
+
+  // Intro block visibility
+  const introEl = document.getElementById('intro-text');
+  if (name === 'intro') {
+    introEl.style.opacity       = '1';
+    introEl.style.pointerEvents = 'all';
+  } else {
+    introEl.style.opacity       = '0';
+    introEl.style.pointerEvents = 'none';
+  }
+
+  // Ephemeral scene quote
+  if (SCENE_QUOTES[name]) {
+    const qEl = document.getElementById('scene-quote');
+    qEl.textContent = SCENE_QUOTES[name];
+    qEl.classList.remove('show');
+    void qEl.offsetWidth; // reflow
+    setTimeout(() => {
+      qEl.classList.add('show');
+      setTimeout(() => qEl.classList.remove('show'), 5000);
+    }, 800);
+  }
+
+  // Progress dots (0=control … 3=avoidance)
+  const order = ['control','perspective','lightness','avoidance'];
+  order.forEach((sc, i) => {
+    const d = document.getElementById(`dot-${i}`);
+    if (d) d.classList.toggle('active', sc === name);
+  });
+
+  if (name === 'ending') triggerReflection();
+}
+
+/* ══════════════════════════════════════════════════════
+   ⑥ GEMINI API — REFLECTION
+══════════════════════════════════════════════════════ */
+async function callGemini(prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.GEMINI_MODEL}:generateContent?key=${CFG.GEMINI_KEY}`;
+  const res = await fetch(url, {
+    method : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body   : JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 1.2, maxOutputTokens: 230, topP: 0.92 }
+    })
+  });
+  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+  const d = await res.json();
+  return d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+}
+
+/** Build a prompt from analytics, asking Gemini for a poetic reflection. */
+function buildPrompt() {
+  const fPct = S.fistN  ? Math.round((S.fistSum  / S.fistN)  * 100) : 0;
+  const pAmt = S.perspN ? (S.perspSum / S.perspN).toFixed(2)         : '0.00';
+  const sPct = S.smileN ? Math.round((S.smileSum / S.smileN) * 100)  : 0;
+  const tot  = S.catches + S.misses;
+  const cPct = tot ? Math.round((S.catches / tot) * 100) : 0;
+
+  return `
+Write a short poetic reflection (4–5 sentences, under 90 words) for someone who just completed an intimate body-tracking experience. 
+
+Rules:
+- Begin mid-thought. Not with "You" or "There" or "In the".
+- Use the word "you" at most once.
+- Tone: quiet, slightly unsettling, not fully accurate but believable — like something half-remembered.
+- No advice. No diagnosis. No bullet points.
+- Do not reference "the experience", "sensors", "tracking", or technology in any way.
+
+Behavioural data (transform into felt sensation — do not mention the data):
+- Grip tightness: ${fPct}% of the time
+- Head movement magnitude: ${pAmt}/1.0
+- Smile intensity: ${sPct}% of the time  
+- Catching: caught ${cPct}% of things that came toward them (${S.catches} caught, ${S.misses} missed)
+
+Write only the reflection text. Nothing else.
+`.trim();
+}
+
+const FALLBACKS = [
+  "Something in the reaching forward — and the pulling back — and the reaching again. The shape a hand makes when it thinks no one is watching. There was a structure there all along. You just needed to look at it sideways. That's the part that stays.",
+  "Tighter than expected. The body knows before the mind does — that's just the order of things. When it moved, the room shifted too, a little. Not in the dramatic way. In the way a sentence shifts when you finally find the right word for what was always already true.",
+  "It arrives whether you are ready or not. Something in the jaw knows this before the hands do. The stillness, when it came, was not peace — it was decision. There is a difference. Most people don't notice. You noticed, just late.",
+];
+
+async function triggerReflection() {
+  const overlay = document.getElementById('ref-overlay');
+  const textEl  = document.getElementById('ref-text');
+
+  overlay.classList.add('show');
+
+  try {
+    const text = await callGemini(buildPrompt());
+    if (text) {
+      textEl.innerHTML = text;
+    } else { throw new Error('empty'); }
+  } catch {
+    textEl.innerHTML = FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)];
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   ⑦ p5.js SKETCH
+      All generative visuals live here.
+      Reads from S (global state) every frame.
+══════════════════════════════════════════════════════ */
+new p5(p => {
+
+  // ── Shared particle pool ─────────────────────
+  let pts = [];
+
+  // ── Noise time (advances each frame) ────────
+  let noiseT = 0;
+
+  // ── Scene change detection ───────────────────
+  let prevScene = '';
+
+  // ── Scene 1 state ────────────────────────────
+  let chaos = 0;   // lerped fist value
+
+  // ── Scene 2 state ────────────────────────────
+  let cloud = [];  // 3D point cloud
+  let rotY  = 0;   // camera rotation angles (lerped from head)
+  let rotX  = 0;
+
+  // ── Scene 3 state ────────────────────────────
+  let smileLerp = 0;
+  let floaters  = [];
+
+  // ── Scene 4 state ────────────────────────────
+  let targets    = [];
+  let spawnClock = 0;
+
+  // ── Setup ─────────────────────────────────────
+  p.setup = () => {
+    const cnv = p.createCanvas(p.windowWidth, p.windowHeight);
+    cnv.elt.style.cssText = 'position:fixed;top:0;left:0;z-index:1;';
+    p.colorMode(p.RGB, 255, 255, 255, 255);
+
+    // Build 3D cloud for scene 2.
+    // Distribute points on 3 concentric sphere shells → reveals geometry at angles.
+    for (let i = 0; i < 340; i++) {
+      const theta = p.random(p.TWO_PI);
+      const phi   = p.acos(p.random(-1, 1));
+      const r     = p.random([0.36, 0.64, 0.92]) + p.random(-0.04, 0.04);
+      cloud.push({
+        ox: r * Math.sin(phi) * Math.cos(theta),
+        oy: r * Math.sin(phi) * Math.sin(theta),
+        oz: r * Math.cos(phi),
+        x:0, y:0, z:0,
+        drift: p.random(0.5, 2.0)
+      });
+    }
+  };
+
+  p.windowResized = () => p.resizeCanvas(p.windowWidth, p.windowHeight);
+
+  // ── Main draw loop ─────────────────────────────
+  p.draw = () => {
+    const scene = S.scene;
+
+    // ── On scene change: clear transient state ──
+    if (scene !== prevScene) {
+      pts       = [];
+      floaters  = [];
+      targets   = [];
+      chaos     = 0;
+      smileLerp = 0;
+      rotY = rotX = 0;
+      spawnClock = 0;
+      prevScene  = scene;
+    }
+
+    // ── Dispatch to scene draw fn ──
+    if      (scene === 'intro')       drawIntro();
+    else if (scene === 'control')     drawControl();
+    else if (scene === 'perspective') drawPerspective();
+    else if (scene === 'lightness')   drawLightness();
+    else if (scene === 'avoidance')   drawAvoidance();
+    else if (scene === 'ending')      drawEnding();
+
+    // ── Auto-advance scene on timer ──
+    if (CFG.SCENE_DUR[scene]) {
+      S.sceneFrame++;
+      if (S.sceneFrame >= CFG.SCENE_DUR[scene]) {
+        const idx = SCENE_ORDER.indexOf(scene);
+        if (idx < SCENE_ORDER.length - 1) {
+          goScene(SCENE_ORDER[idx + 1]);
         }
+        S.sceneFrame = 0; // prevent repeated trigger while transitioning
+      }
+    }
 
-        // --- P5.JS LOGIC ---
-        function setup() {
-            createCanvas(windowWidth, windowHeight);
-            video = createCapture(VIDEO);
-            video.size(640, 480);
-            video.hide();
-            initAI();
-            
-            for(let i=0; i<100; i++) particles.push(new Particle());
+    noiseT += 0.0024;
+  };
+
+  /* ════════════════════════════════════════════
+     SCENE — INTRO
+     Slow, sparse Perlin drift. Almost nothing.
+  ════════════════════════════════════════════ */
+  function drawIntro() {
+    p.background(0, 0, 0, 18);
+
+    if (p.frameCount % 16 === 0 && pts.length < 80) {
+      spawn(p.random(p.width), p.random(p.height), {
+        size: p.random(0.8, 2.2), decay: 0.0022,
+        col: [225, 222, 215], alpha: 0.28
+      });
+    }
+    renderPts(0.0007, 0.1);
+  }
+
+  /* ════════════════════════════════════════════
+     SCENE 1 — CONTROL
+     Fist → chaos. Open hand → flow.
+
+     Mapping:
+       fist 0   → noiseScale=0.0006, speed=0.22, cool blue-white particles, flow lines visible
+       fist 0.5 → distortion rings appear
+       fist 1.0 → noiseScale=0.005,  speed=3.0,  red-orange particles, all rings active
+  ════════════════════════════════════════════ */
+  function drawControl() {
+    chaos = p.lerp(chaos, S.fist, 0.07);
+
+    // ── Analytics ──
+    S.fistSum += S.fist;
+    S.fistN++;
+
+    // ── Background: trail persistence increases with chaos ──
+    p.background(0, 0, 0, p.map(chaos, 0, 1, 11, 36));
+
+    const ns  = p.map(chaos, 0, 1, 0.00055, 0.005);
+    const spd = p.map(chaos, 0, 1, 0.20, 3.2);
+
+    // ── Spawn particles ──
+    const rate = Math.max(1, Math.round(p.map(chaos, 0, 1, 8, 1)));
+    if (p.frameCount % rate === 0) {
+      const count = chaos > 0.6 ? 6 : 2;
+      for (let i = 0; i < count; i++) {
+        const r2 = p.map(chaos, 0, 1, 160, 255);
+        const g2 = p.map(chaos, 0, 1, 188, 28);
+        const b2 = p.map(chaos, 0, 1, 248, 12);
+        spawn(p.random(p.width), p.random(p.height), {
+          size : p.map(chaos, 0, 1, 1.4, 9) + p.random(-0.8, 1.5),
+          decay: p.map(chaos, 0, 1, 0.003, 0.022),
+          col  : [r2 + p.random(-20, 20), g2, b2],
+          alpha: p.map(chaos, 0, 1, 0.42, 1.0)
+        });
+      }
+    }
+
+    // ── Calm: directional flow lines ──
+    if (chaos < 0.45) {
+      const lineAlpha = p.map(chaos, 0, 0.45, 30, 3);
+      p.stroke(145, 195, 255, lineAlpha);
+      p.strokeWeight(0.4);
+      for (let c = 0; c < 26; c++) {
+        for (let r = 0; r < 18; r++) {
+          const x = (c / 26) * p.width;
+          const y = (r / 18) * p.height;
+          const a = p.noise(x * ns, y * ns, noiseT) * p.TWO_PI * 4;
+          const len = 20 * (1 - chaos);
+          p.line(x, y, x + Math.cos(a) * len, y + Math.sin(a) * len);
         }
+      }
+    }
 
-        function draw() {
-            background(5, 5, 5, 20); // Ghostly trails
-            
-            if (!handLandmarker || !faceLandmarker) return;
+    renderPts(ns, spd);
 
-            let startTimeMs = performance.now();
-            if (lastVideoTime !== video.elt.currentTime) {
-                lastVideoTime = video.elt.currentTime;
-                
-                const handResults = handLandmarker.detectForVideo(video.elt, startTimeMs);
-                const faceResults = faceLandmarker.detectForVideo(video.elt, startTimeMs);
-
-                handleInteractions(handResults, faceResults);
-            }
-
-            renderVisuals();
+    // ── Chaotic distortion rings ──
+    if (chaos > 0.40) {
+      const c2 = (chaos - 0.40) / 0.60;
+      p.noFill();
+      for (let ring = 0; ring < 5; ring++) {
+        p.stroke(255, 18 + ring * 14, 6, c2 * 60);
+        p.strokeWeight(c2 * 3.2);
+        p.beginShape();
+        for (let a = 0; a <= p.TWO_PI + 0.1; a += 0.20) {
+          const baseR = 50 + ring * 48;
+          const rad   = baseR + p.noise(a * 0.72, ring * 1.3, noiseT * (2 + ring * 0.5)) * 75 * c2;
+          const jit   = c2 * 14;
+          p.curveVertex(
+            p.width/2  + Math.cos(a) * rad + p.random(-jit, jit),
+            p.height/2 + Math.sin(a) * rad + p.random(-jit, jit)
+          );
         }
+        p.endShape(p.CLOSE);
+      }
+    }
+  }
 
-        function handleInteractions(hands, faces) {
-            if (currentState === 1 && hands.landmarks.length > 0) {
-                // Scene 1: Control (Clench)
-                let finger = hands.landmarks[0][8]; // Index tip
-                let thumb = hands.landmarks[0][4]; // Thumb tip
-                let d = dist(finger.x, finger.y, thumb.x, thumb.y);
-                if (d < 0.05) {
-                    userStats.clenchCount++;
-                    noiseIntensity = 50; 
-                } else {
-                    noiseIntensity = 2;
-                }
-            }
+  /* ════════════════════════════════════════════
+     SCENE 2 — PERSPECTIVE
+     3D point cloud on sphere shells.
+     Head rotation reveals structure.
 
-            if (currentState === 2 && faces.faceLandmarks.length > 0) {
-                // Scene 2: Perspective (Head movement)
-                let nose = faces.faceLandmarks[0][1];
-                userStats.shifts += abs(nose.x - 0.5);
-            }
+     Mapping:
+       headX/Y  → rotY/X (camera orbit)
+       still    → dim, close to flat, hard to read
+       moving   → brightens, edges pop, spatial depth emerges
+  ════════════════════════════════════════════ */
+  function drawPerspective() {
+    p.background(0, 0, 0, 17);
 
-            if (currentState === 3 && faces.faceBlendshapes.length > 0) {
-                // Scene 3: Lightness (Smile Detection)
-                let shapes = faces.faceBlendshapes[0].categories;
-                let smile = shapes.find(s => s.categoryName === "jawOpen").score; // Using jaw as proxy for "lightness"
-                if (smile > 0.2) userStats.smileTime++;
-            }
+    rotY = p.lerp(rotY, S.headX * 0.98, 0.04);
+    rotX = p.lerp(rotX, S.headY * 0.58, 0.04);
+
+    const mvt = Math.abs(rotY) + Math.abs(rotX);
+    S.perspSum += mvt;
+    S.perspN++;
+
+    const cx = p.width / 2, cy = p.height / 2, FOV = 530;
+
+    // ── 3D→2D projection (rotate Y then X) ──
+    function project(px, py, pz) {
+      const cy_ = Math.cos(rotY), sy_ = Math.sin(rotY);
+      const x2  = px * cy_ - pz * sy_;
+      const z2  = px * sy_ + pz * cy_;
+      const cx_ = Math.cos(rotX), sx_ = Math.sin(rotX);
+      const y2  = py * cx_ - z2 * sx_;
+      const z3  = py * sx_ + z2 * cx_ + 2.4;   // push cloud away from camera
+      const sc  = FOV / (z3 + FOV * 0.35);
+      return { x: cx + x2 * sc * 235, y: cy + y2 * sc * 235, z: z3, sc };
+    }
+
+    // ── Animate cloud with slow Perlin drift ──
+    for (const pt of cloud) {
+      const d = pt.drift * 0.28;
+      pt.x = pt.ox + (p.noise(pt.ox*2,       pt.oy*2,       noiseT*d) - 0.5) * 0.13;
+      pt.y = pt.oy + (p.noise(pt.ox*2+50,    pt.oy*2,       noiseT*d) - 0.5) * 0.13;
+      pt.z = pt.oz + (p.noise(pt.ox*2,       pt.oy*2+50,    noiseT*d) - 0.5) * 0.13;
+    }
+
+    // ── Draw edges between nearby points ──
+    const maxD       = 0.44;
+    const brightBoost = p.map(mvt, 0, 0.65, 0.5, 1.55);
+    p.strokeWeight(0.65);
+    for (let i = 0; i < cloud.length; i++) {
+      const a = cloud[i];
+      for (let j = i + 1; j < cloud.length; j++) {
+        const b = cloud[j];
+        const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+        if (d < maxD) {
+          const pa = project(a.x, a.y, a.z);
+          const pb = project(b.x, b.y, b.z);
+          const al = p.map(d, 0, maxD, 72, 0) * brightBoost;
+          const bl = p.map(mvt, 0, 0.65, 170, 248);
+          p.stroke(172, 194, bl, al);
+          p.line(pa.x, pa.y, pb.x, pb.y);
         }
+      }
+    }
 
-        let noiseIntensity = 2;
+    // ── Draw nodes ──
+    p.noStroke();
+    for (const pt of cloud) {
+      const pr = project(pt.x, pt.y, pt.z);
+      const br = p.map(pr.z, 0.8, 4.8, 220, 40) * brightBoost;
+      const sz = p.map(pr.sc, 0.06, 2.0, 0.7, 5.8);
+      p.fill(br*0.8, br*0.9, Math.min(255, br*1.22), Math.min(255, br));
+      p.ellipse(pr.x, pr.y, sz);
+    }
+  }
 
-        function renderVisuals() {
-            translate(width/2, height/2);
-            stroke(255, 30);
-            noFill();
+  /* ════════════════════════════════════════════
+     SCENE 3 — LIGHTNESS
+     Smile softens rigid grid into wave field.
+     Floaters rise with smile intensity.
 
-            if (currentState === 1) {
-                // Aggressive noise based on clench
-                for (let i = 0; i < 5; i++) {
-                    beginShape();
-                    for (let x = -200; x < 200; x += 10) {
-                        let y = noise(x * 0.01, frameCount * 0.05) * noiseIntensity * 10;
-                        vertex(x, y);
-                    }
-                    endShape();
-                }
-            } else {
-                // Default drifting particles
-                particles.forEach(p => {
-                    p.update();
-                    p.show();
-                });
-            }
+     Mapping:
+       smile 0.0 → rigid orthogonal grid + heavy vertical bars
+       smile 0.3 → grid begins to wave, floaters emerge
+       smile 1.0 → flowing curves, luminous floaters, bars gone
+  ════════════════════════════════════════════ */
+  function drawLightness() {
+    smileLerp = p.lerp(smileLerp, S.smile, 0.045);
+
+    S.smileSum += S.smile;
+    S.smileN++;
+
+    p.background(0, 0, 0, p.map(smileLerp, 0, 1, 15, 7));
+
+    const cols = 14, rows = 10;
+    const cw   = p.width / cols, ch = p.height / rows;
+
+    // ── Grid field ──
+    p.strokeWeight(p.map(smileLerp, 0, 1, 1.7, 0.4));
+    for (let i = 0; i <= cols; i++) {
+      for (let j = 0; j <= rows; j++) {
+        const x  = i * cw, y = j * ch;
+        const wv = p.noise(i * 0.27, j * 0.27, noiseT) * smileLerp * 32;
+        const al = p.map(smileLerp, 0, 1, 52, 9);
+        p.stroke(255, 255, 255, al);
+        if (i < cols) {
+          if (smileLerp < 0.10) {
+            // Rigid straight lines
+            p.line(x, y, x + cw, y);
+          } else {
+            // Soft waving curves
+            p.noFill();
+            p.beginShape();
+            p.curveVertex(x - cw,       y + wv * 0.3);
+            p.curveVertex(x,            y + wv);
+            p.curveVertex(x + cw * 0.5, y - wv * 0.5);
+            p.curveVertex(x + cw,       y + wv * 0.2);
+            p.curveVertex(x + cw * 2,   y - wv * 0.4);
+            p.endShape();
+          }
         }
-
-        class Particle {
-            constructor() {
-                this.pos = createVector(random(-width, width), random(-height, height));
-                this.vel = createVector(random(-1, 1), random(-1, 1));
-            }
-            update() {
-                this.pos.add(this.vel);
-                if(this.pos.x > width/2) this.pos.x = -width/2;
-            }
-            show() {
-                point(this.pos.x, this.pos.y);
-            }
+        if (j < rows && smileLerp < 0.10) {
+          p.line(x, y, x, y + ch);
         }
+      }
+    }
 
-        // --- STATE MANAGEMENT ---
-        function nextScene() {
-            currentState++;
-            if (currentState >= scenes.length - 1) {
-                generateAIFinal();
-            }
-            
-            const content = scenes[currentState];
-            document.getElementById('text-content').innerText = content.txt;
-            document.getElementById('action-btn').innerText = content.btn;
-            
-            if (content.btn === "") document.getElementById('action-btn').style.display = "none";
+    // ── Floaters rise with smile ──
+    if (smileLerp > 0.04 && p.random() < smileLerp * 0.30) {
+      floaters.push({
+        x: p.random(p.width),
+        y: p.height + p.random(12),
+        vy: -(0.45 + smileLerp * 3.0),
+        vx: p.random(-0.45, 0.45),
+        size: p.random(1.4, 3.2 + smileLerp * 5),
+        life: 1,
+        decay: 0.0038 + smileLerp * 0.01,
+        br: 165 + smileLerp * 88
+      });
+    }
+    floaters = floaters.filter(f => f.life > 0 && f.y > -20);
+    for (const f of floaters) {
+      f.y    += f.vy;
+      f.x    += f.vx;
+      f.vy   -= 0.011 * smileLerp;  // become lighter as smile grows
+      f.life -= f.decay;
+      p.noStroke();
+      p.fill(f.br, f.br, f.br - 10, f.life * smileLerp * 235);
+      p.ellipse(f.x, f.y, f.size);
+    }
+
+    // ── Rigid vertical bars (disappear as smile grows) ──
+    if (smileLerp < 0.24) {
+      const w = 1 - smileLerp / 0.24;
+      p.stroke(255, 255, 255, w * 22);
+      p.strokeWeight(w * 5);
+      for (let i = 1; i < 5; i++) {
+        p.line(i * p.width / 5, 0, i * p.width / 5, p.height);
+      }
+    }
+  }
+
+  /* ════════════════════════════════════════════
+     SCENE 4 — AVOIDANCE
+     Geometric objects converge on center.
+     Hand (tracked) must intercept them.
+     Catch → gold burst. Miss → red flash.
+
+     Mapping:
+       hand near object → catch detected (radius ≈ 60px + object radius)
+       object reaches center → miss
+       pace accelerates over time
+  ════════════════════════════════════════════ */
+  function drawAvoidance() {
+    p.background(0, 0, 0, 19);
+
+    spawnClock++;
+    // Objects spawn faster as time in scene increases
+    const interval = Math.max(24, 98 - S.sceneFrame * 0.075);
+
+    // ── Spawn new target ──
+    if (spawnClock > interval) {
+      spawnClock = 0;
+      const edge = Math.floor(p.random(4));
+      let sx, sy;
+      if      (edge === 0) { sx = p.random(p.width);  sy = -48; }
+      else if (edge === 1) { sx = p.random(p.width);  sy = p.height + 48; }
+      else if (edge === 2) { sx = -48;                sy = p.random(p.height); }
+      else                  { sx = p.width + 48;       sy = p.random(p.height); }
+
+      const tx = p.width / 2, ty = p.height / 2;
+      const mag = Math.hypot(tx - sx, ty - sy);
+      const spd = p.random(1.7, 3.5);
+      targets.push({
+        x:sx, y:sy,
+        vx: (tx - sx) / mag * spd,
+        vy: (ty - sy) / mag * spd,
+        r: p.random(15, 44),
+        alpha: 0
+      });
+    }
+
+    // ── Center target rings ──
+    p.noFill();
+    p.stroke(255, 40, 25, 26); p.strokeWeight(0.8);
+    p.ellipse(p.width/2, p.height/2, 72, 72);
+    p.stroke(255, 40, 25, 11);
+    p.ellipse(p.width/2, p.height/2, 114, 114);
+
+    // ── Update & draw targets ──
+    const hp = S.hand;
+    targets = targets.filter(t => {
+      t.alpha = Math.min(1, t.alpha + 0.044);
+      t.x += t.vx; t.y += t.vy;
+
+      // Catch detection
+      if (hp && Math.hypot(t.x - hp.x, t.y - hp.y) < t.r + 62) {
+        S.catches++;
+        for (let i = 0; i < 18; i++) {
+          spawn(t.x, t.y, {
+            size: p.random(3, 11), decay: 0.048,
+            col: [255, 218, 85], alpha: 1,
+            noiseFollow: false,
+            vx: p.random(-4, 4), vy: p.random(-4, 4)
+          });
         }
+        return false;
+      }
 
-        // --- GEMINI API ---
-        async function generateAIFinal() {
-            const API_KEY = "YOUR_GOOGLE_AI_STUDIO_KEY"; // REPLACE THIS
-            const prompt = `Act as a cryptic, slightly unsettling observer. Based on these user stats: 
-            Clenching/Control: ${userStats.clenchCount}, Perspective shifting: ${userStats.shifts.toFixed(2)}, 
-            Lightness/Smiling: ${userStats.smileTime}. 
-            Write a 3-sentence poetic reflection about their soul. Be cold and surreal.`;
+      // Miss detection
+      if (Math.hypot(t.x - p.width/2, t.y - p.height/2) < 28) {
+        S.misses++;
+        spawn(p.width/2, p.height/2, {
+          size: 60, decay: 0.055, col: [255, 32, 12], alpha: 0.55
+        });
+        return false;
+      }
 
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                const data = await response.json();
-                const reflection = data.candidates[0].content.parts[0].text;
-                
-                document.getElementById('text-content').style.display = "none";
-                const output = document.getElementById('reflection-output');
-                output.style.display = "block";
-                output.innerText = reflection;
-            } catch (e) {
-                document.getElementById('reflection-output').innerText = "You moved, but remained unseen.";
-                document.getElementById('reflection-output').style.display = "block";
-            }
-        }
+      // Draw: crosshair circle
+      const al = t.alpha * 78;
+      p.noFill(); p.stroke(255, 255, 255, al); p.strokeWeight(1);
+      p.ellipse(t.x, t.y, t.r * 2);
+      p.stroke(255, 255, 255, al * 0.38); p.strokeWeight(0.5);
+      p.line(t.x - t.r, t.y, t.x + t.r, t.y);
+      p.line(t.x, t.y - t.r, t.x, t.y + t.r);
+      return true;
+    });
 
-        function windowResized() { resizeCanvas(windowWidth, windowHeight); }
-    </script>
+    // ── Hand indicator ──
+    if (hp) {
+      p.noFill();
+      p.stroke(255, 255, 255, 32); p.strokeWeight(1);
+      p.ellipse(hp.x, hp.y, 124);
+      p.stroke(255, 255, 255, 14);
+      p.ellipse(hp.x, hp.y, 64);
+    }
+
+    // ── Score (minimal) ──
+    if (S.catches + S.misses > 0) {
+      p.noStroke(); p.fill(255, 255, 255, 42);
+      p.textSize(11.5); p.textAlign(p.RIGHT);
+      p.textFont('Georgia');
+      p.text(`${S.catches}  ·  ${S.misses}`, p.width - 26, 33);
+    }
+
+    renderPts(0.001, 0.42);
+  }
+
+  /* ════════════════════════════════════════════
+     SCENE — ENDING
+     Very slow, very quiet drift.
+  ════════════════════════════════════════════ */
+  function drawEnding() {
+    p.background(0, 0, 0, 5);
+    if (p.frameCount % 30 === 0 && pts.length < 55) {
+      spawn(p.random(p.width), p.random(p.height), {
+        size: p.random(0.4, 1.4), decay: 0.0016,
+        col: [200, 198, 192], alpha: 0.20
+      });
+    }
+    renderPts(0.00048, 0.065);
+  }
+
+  /* ════════════════════════════════════════════
+     PARTICLE SYSTEM
+  ════════════════════════════════════════════ */
+
+  /** Add a particle to the pool. */
+  function spawn(x, y, {
+    size=2, decay=0.005, col=[255,255,255], alpha=1,
+    vx=0, vy=0, noiseFollow=true
+  } = {}) {
+    pts.push({ x, y, vx, vy, size, life:1, decay, col, alpha, noiseFollow });
+  }
+
+  /** Update & render all particles.
+   *  @param {number} ns   Noise scale (how large the swirl patterns are)
+   *  @param {number} spd  How fast particles respond to the flow field
+   */
+  function renderPts(ns, spd) {
+    pts = pts.filter(pt => pt.life > 0);
+    for (const pt of pts) {
+      if (pt.noiseFollow) {
+        const a = p.noise(pt.x * ns, pt.y * ns, noiseT) * p.TWO_PI * 4;
+        pt.vx += Math.cos(a) * spd;
+        pt.vy += Math.sin(a) * spd;
+        pt.vx *= 0.905;
+        pt.vy *= 0.905;
+      }
+      pt.x += pt.vx;
+      pt.y += pt.vy;
+      pt.life -= pt.decay;
+      p.noStroke();
+      p.fill(pt.col[0], pt.col[1], pt.col[2], pt.life * pt.alpha * 255);
+      p.ellipse(pt.x, pt.y, pt.size);
+    }
+  }
+
+}); // end p5 sketch
+
+/* ══════════════════════════════════════════════════════
+   ⑧ BOOT
+══════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('begin-btn').addEventListener('click', () => {
+    initMediaPipe();
+    goScene('control');
+  });
+});
+</script>
 </body>
 </html>
