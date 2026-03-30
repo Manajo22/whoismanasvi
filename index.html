@@ -5,228 +5,474 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>diary entries</title>
 <style>
-/* ══════════════════════════════════════════════
-   BASE
-══════════════════════════════════════════════ */
+/* ──────────────────────────────────────────────
+   RESET
+────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,300;0,400;1,300;1,400&display=swap');
-
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-html, body { width:100%; height:100%; overflow:hidden; background:#000; }
-body { font-family:'EB Garamond', Georgia, serif; }
+html, body { width:100%; height:100%; overflow:hidden; background:#0c0b09; }
 
-/* The p5 canvas sits here (z:1) */
-canvas { position:fixed; top:0; left:0; z-index:1; }
+/* ──────────────────────────────────────────────
+   GRAIN / PAPER TEXTURE overlay
+────────────────────────────────────────────── */
+body::after {
+  content:''; position:fixed; inset:0; z-index:600;
+  pointer-events:none; opacity:0.55; mix-blend-mode:overlay;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.12'/%3E%3C/svg%3E");
+}
 
-/* ══════════════════════════════════════════════
-   VEIL — scene transition fade
-══════════════════════════════════════════════ */
+/* ──────────────────────────────────────────────
+   SPLIT — left = camera, right = gen art
+────────────────────────────────────────────── */
+#cam-panel {
+  position:fixed; left:0; top:0;
+  width:50%; height:100%; z-index:2;
+  overflow:hidden;
+  /* torn paper right edge */
+  clip-path: polygon(
+    0 0,
+    96% 0, 100% 1.2%, 95% 3%, 100% 5.5%,
+    96% 8%, 100% 11%, 94% 14%, 100% 17%,
+    97% 20%, 100% 23.5%, 95% 27%, 100% 31%,
+    96% 35%, 100% 39%, 95% 43%, 100% 47%,
+    97% 51%, 100% 55%, 94% 59%, 100% 63%,
+    96% 67%, 100% 71%, 95% 75%, 100% 79%,
+    97% 83%, 100% 87%, 95% 91%, 100% 95%,
+    96% 98%, 100% 100%,
+    0 100%
+  );
+}
+
+#webcam {
+  width:100%; height:100%;
+  object-fit:cover; transform:scaleX(-1);
+  display:block;
+  filter:contrast(1.08) saturate(0.55) brightness(0.9);
+}
+
+#cam-overlay {
+  position:absolute; inset:0;
+  background:rgba(8,7,5,0.60);
+}
+
+/* ──────────────────────────────────────────────
+   VEIL — scene transitions
+────────────────────────────────────────────── */
 #veil {
-  position:fixed; inset:0; background:#000;
+  position:fixed; inset:0; background:#0c0b09;
   opacity:0; pointer-events:none;
-  z-index:300; transition:opacity 0.65s ease;
+  z-index:500; transition:opacity 0.7s ease;
 }
 #veil.on { opacity:1; pointer-events:all; }
 
-/* ══════════════════════════════════════════════
-   WEBCAM PREVIEW
-══════════════════════════════════════════════ */
-#webcam {
-  position:fixed; bottom:20px; right:20px;
-  width:128px; height:92px; object-fit:cover;
-  border-radius:5px; opacity:0.16;
-  transform:scaleX(-1); z-index:50;
-  transition:opacity 0.3s;
-}
-#webcam:hover { opacity:0.42; }
+/* ──────────────────────────────────────────────
+   HANDWRITTEN IMAGE SYSTEM
+   
+   Each .hw-slot holds:
+     • <img class="hw-img" src="./handwriting/NAME.png">  ← your PNG
+     • <div class="hw-fallback">placeholder text</div>    ← shown if PNG missing
 
-/* ══════════════════════════════════════════════
-   UI LAYER
-══════════════════════════════════════════════ */
+   HOW TO USE YOUR PNGs:
+     1. Create a folder called "handwriting/" next to this HTML file
+     2. Export each piece of handwriting as a transparent PNG
+     3. Name them exactly as referenced in the HTML below
+     4. Drop them in — fallback dashes disappear automatically
+
+   PNG CHECKLIST:
+     handwriting/title.png           — main title ("these are things I wrote down")
+     handwriting/begin.png           — "begin" button label
+     handwriting/label-control.png   — "I · control"
+     handwriting/label-persp.png     — "II · perspective"
+     handwriting/label-light.png     — "III · lightness"
+     handwriting/hint-control.png    — "close your hand — then open it"
+     handwriting/hint-persp.png      — "move your head slowly side to side"
+     handwriting/hint-light.png      — "let yourself smile"
+     handwriting/quote-control.png   — "the more tightly you hold on..."
+     handwriting/quote-persp.png     — "when things don't make sense..."
+     handwriting/quote-light.png     — "take things lightly"
+     handwriting/metric-hands.png    — "times your hand opened & closed"
+     handwriting/metric-persp.png    — "times you shifted your view"
+     handwriting/metric-smile.png    — "times you smiled"
+     handwriting/again.png           — "again" button
+────────────────────────────────────────────── */
+.hw-slot {
+  position:relative; display:inline-flex;
+  align-items:center; justify-content:center;
+}
+.hw-img {
+  display:block; max-width:100%; height:auto;
+}
+/* Hide fallback when image loads */
+.hw-img:not([data-broken]) + .hw-fallback { display:none; }
+/* Fallback styling — dashed paper scrap */
+.hw-fallback {
+  font-family:'EB Garamond', Georgia, serif;
+  font-style:italic; font-weight:300;
+  color:rgba(255,255,255,0.32);
+  border:1px dashed rgba(255,255,255,0.18);
+  padding:6px 14px; border-radius:1px;
+  background:rgba(255,255,255,0.025);
+  letter-spacing:0.08em; line-height:1.5;
+}
+
+/* Tape strip decoration */
+.tape {
+  position:absolute;
+  height:20px;
+  background:rgba(255,244,190,0.22);
+  mix-blend-mode:screen; border-radius:1px;
+  pointer-events:none;
+}
+.tape::after {
+  content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(
+    90deg, transparent 0, transparent 4px,
+    rgba(255,255,255,0.07) 4px, rgba(255,255,255,0.07) 5px
+  );
+}
+
+/* ──────────────────────────────────────────────
+   UI LAYER — left half (over camera)
+────────────────────────────────────────────── */
 #ui {
-  position:fixed; inset:0; z-index:10;
+  position:fixed; left:0; top:0;
+  width:50%; height:100%; z-index:10;
   display:flex; flex-direction:column;
   align-items:center; justify-content:center;
   pointer-events:none;
 }
 
-/* Scene label top-center */
+/* Scene label — top center of left panel */
 #scene-label {
-  position:fixed; top:30px; left:50%;
-  transform:translateX(-50%);
-  font-size:11px; letter-spacing:0.38em;
-  text-transform:uppercase; font-style:italic;
-  color:rgba(255,255,255,0.24);
-  white-space:nowrap;
-  transition:opacity 0.8s;
+  position:absolute; top:32px; left:50%;
+  transform:translateX(-50%) rotate(-0.9deg);
+  opacity:0; transition:opacity 0.9s ease;
 }
 
-/* Intro block */
-#intro-text {
-  text-align:center; padding:0 52px;
-  max-width:560px;
-  transition:opacity 1s ease;
+/* ── INTRO ── */
+#intro-block {
+  display:flex; flex-direction:column;
+  align-items:center; gap:44px;
+  opacity:1; transition:opacity 0.9s ease;
 }
-#intro-text h1 {
-  font-size:clamp(17px, 2.6vw, 27px);
-  font-weight:300; font-style:italic;
-  line-height:1.82; letter-spacing:0.03em;
-  color:rgba(255,255,255,0.72);
-  margin-bottom:52px;
+
+#hw-title-wrap {
+  transform:rotate(-1.5deg);
+  position:relative;
 }
+#hw-title-wrap .tape {
+  width:64px; top:-10px; left:50%;
+  transform:translateX(-50%) rotate(1.8deg);
+}
+#hw-title-wrap .hw-fallback {
+  font-size:clamp(15px,2.4vw,22px);
+  line-height:1.85; letter-spacing:0.03em;
+  max-width:300px; text-align:center;
+  border:none; background:none;
+  color:rgba(255,255,255,0.58);
+}
+
 #begin-btn {
-  display:inline-block;
-  font-size:11px; letter-spacing:0.5em;
-  text-transform:uppercase;
-  color:rgba(255,255,255,0.28);
   cursor:pointer; pointer-events:all;
-  border-bottom:1px solid rgba(255,255,255,0.1);
-  padding-bottom:3px;
-  transition:color 0.4s, border-color 0.4s;
+  transform:rotate(0.8deg);
+  transition:transform 0.3s, opacity 0.3s;
 }
-#begin-btn:hover {
-  color:rgba(255,255,255,0.72);
-  border-color:rgba(255,255,255,0.38);
+#begin-btn:hover { transform:rotate(0.8deg) scale(1.05); opacity:0.68; }
+#begin-btn .hw-fallback {
+  font-size:10px; letter-spacing:0.55em;
+  text-transform:uppercase; padding:6px 18px;
 }
 
-/* Scene instruction */
+/* ── HINT ── */
 #hint {
-  position:fixed; bottom:56px; left:50%;
-  transform:translateX(-50%);
-  font-size:12.5px; letter-spacing:0.18em;
-  font-style:italic;
-  color:rgba(255,255,255,0.18);
-  text-align:center; max-width:400px;
-  white-space:nowrap;
-  pointer-events:none;
-  transition:opacity 0.9s;
+  position:absolute; bottom:54px; left:50%;
+  transform:translateX(-50%) rotate(-0.5deg);
+  opacity:0; transition:opacity 0.9s ease;
+  text-align:center;
+}
+#hint .hw-fallback {
+  font-size:11px; letter-spacing:0.22em;
+  color:rgba(255,255,255,0.22);
+  border:none; background:none; padding:0;
 }
 
-/* ══════════════════════════════════════════════
-   PROGRESS DOTS
-══════════════════════════════════════════════ */
+/* ── SCENE QUOTE — ephemeral, left panel center ── */
+#scene-quote {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%) rotate(-1.1deg);
+  text-align:center; max-width:260px;
+  opacity:0; transition:opacity 3s ease;
+  pointer-events:none;
+}
+#scene-quote.show { opacity:1; }
+#scene-quote .hw-fallback {
+  font-size:clamp(12px,1.4vw,15px);
+  line-height:1.8; white-space:normal;
+  text-align:center; max-width:240px;
+  border:none; background:none;
+  color:rgba(255,255,255,0.20);
+}
+
+/* ──────────────────────────────────────────────
+   PROGRESS DOTS (left panel, bottom)
+────────────────────────────────────────────── */
 #dots {
-  position:fixed; bottom:28px; left:50%;
+  position:fixed; bottom:24px; left:25%;
   transform:translateX(-50%);
-  display:flex; gap:11px; z-index:10;
+  display:flex; gap:12px; z-index:11;
 }
 .dot {
-  width:4px; height:4px; border-radius:50%;
-  background:rgba(255,255,255,0.16);
+  width:5px; height:5px; border-radius:50%;
+  background:rgba(255,255,255,0.14);
   transition:background 0.5s, transform 0.35s;
 }
 .dot.active {
-  background:rgba(255,255,255,0.68);
+  background:rgba(255,255,255,0.62);
   transform:scale(1.5);
 }
 
-/* ══════════════════════════════════════════════
-   REFLECTION OVERLAY
-══════════════════════════════════════════════ */
-#ref-overlay {
-  position:fixed; inset:0; z-index:250;
-  background:rgba(0,0,0,0);
+/* ──────────────────────────────────────────────
+   METRICS OVERLAY (ending — left panel)
+────────────────────────────────────────────── */
+#metrics-overlay {
+  position:fixed; left:0; top:0;
+  width:50%; height:100%; z-index:250;
   display:flex; align-items:center; justify-content:center;
   opacity:0; pointer-events:none;
-  transition:opacity 2s ease, background 2.5s ease;
+  transition:opacity 1.8s ease;
 }
-#ref-overlay.show {
+#metrics-overlay.show {
   opacity:1; pointer-events:all;
-  background:rgba(0,0,0,0.9);
 }
-#ref-inner {
-  max-width:500px; padding:64px 44px;
+#metrics-overlay::before {
+  content:''; position:absolute; inset:0;
+  background:rgba(12,11,9,0.82);
+}
+
+#metrics-inner {
+  position:relative; z-index:1;
+  width:82%; max-width:340px;
+  height:420px;
+}
+
+.metric-card {
+  position:absolute;
+  background:rgba(15,14,11,0.94);
+  border:1px solid rgba(255,255,255,0.07);
+  padding:18px 22px 16px;
+  display:flex; flex-direction:column;
+  align-items:flex-start; gap:10px;
+}
+/* tape on each card */
+.metric-card::before {
+  content:''; position:absolute;
+  top:-11px; left:calc(50% - 28px);
+  width:56px; height:18px;
+  background:rgba(255,244,185,0.24);
+  border-radius:1px; mix-blend-mode:screen;
+}
+
+.metric-number {
+  font-size:clamp(48px,8vw,72px);
+  font-weight:300; font-style:italic;
+  color:rgba(255,255,255,0.78);
+  font-family:'EB Garamond', Georgia, serif;
+  line-height:1;
+}
+
+.metric-card .hw-fallback {
+  font-size:9px; letter-spacing:0.3em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.28);
+  border:none; background:none; padding:0;
+}
+
+/* Replay */
+#metrics-replay {
+  position:absolute; bottom:-52px; left:50%;
+  transform:translateX(-50%);
+  cursor:pointer; pointer-events:all;
+}
+#metrics-replay .hw-fallback {
+  font-size:9px; letter-spacing:0.45em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.20);
+  border:none; background:none;
+  padding:0 0 2px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  transition:color 0.4s;
+}
+#metrics-replay:hover .hw-fallback { color:rgba(255,255,255,0.50); }
+
+/* Gemini reflection text under cards */
+#ref-text {
+  position:absolute; bottom:-120px; left:50%;
+  transform:translateX(-50%);
+  width:110%; font-size:12px; line-height:2.0;
+  font-style:italic; font-weight:300;
+  font-family:'EB Garamond', Georgia, serif;
+  color:rgba(255,255,255,0.28);
   text-align:center;
 }
-#ref-text {
-  font-size:clamp(15px, 1.9vw, 20px);
-  font-weight:300; font-style:italic;
-  line-height:2.0; letter-spacing:0.025em;
-  color:rgba(255,255,255,0.65);
-  min-height:100px;
-}
 #ref-loading {
-  display:block;
-  font-size:11px; letter-spacing:0.4em;
-  color:rgba(255,255,255,0.22);
+  font-size:9px; letter-spacing:0.4em;
   text-transform:uppercase; font-style:normal;
   animation:pulse 2s ease-in-out infinite;
 }
-@keyframes pulse {
-  0%,100% { opacity:0.22; }
-  50% { opacity:0.55; }
-}
-#ref-footer {
-  margin-top:56px; font-size:11px;
-  letter-spacing:0.32em; text-transform:uppercase;
-  color:rgba(255,255,255,0.12); font-style:normal;
-}
-#ref-replay {
-  display:inline-block; margin-top:24px;
-  font-size:10px; letter-spacing:0.45em;
-  text-transform:uppercase; font-style:normal;
-  color:rgba(255,255,255,0.18); cursor:pointer;
-  border-bottom:1px solid rgba(255,255,255,0.07);
-  padding-bottom:2px;
-  transition:color 0.4s;
-}
-#ref-replay:hover { color:rgba(255,255,255,0.48); }
+@keyframes pulse { 0%,100%{opacity:.18} 50%{opacity:.5} }
 
-/* ══════════════════════════════════════════════
-   SCENE QUOTE — small ephemeral text
-══════════════════════════════════════════════ */
-#scene-quote {
-  position:fixed; top:50%; left:50%;
-  transform:translate(-50%, -50%);
-  font-size:clamp(13px, 1.6vw, 16px);
-  font-style:italic; font-weight:300;
-  letter-spacing:0.05em; line-height:1.7;
-  color:rgba(255,255,255,0);
-  text-align:center; max-width:420px;
-  pointer-events:none; z-index:8;
-  transition:color 3s ease;
-}
-#scene-quote.show { color:rgba(255,255,255,0.22); }
+/* ──────────────────────────────────────────────
+   p5 CANVAS (right half — art panel)
+   The canvas is positioned fixed top:0 right:0
+   with width = 50vw, height = 100vh
+────────────────────────────────────────────── */
+/* canvas element styled by JS */
 </style>
 </head>
 <body>
 
-<!-- Transition veil -->
+<!-- Veil -->
 <div id="veil"></div>
 
-<!-- Webcam -->
-<video id="webcam" autoplay playsinline muted></video>
-
-<!-- UI -->
-<div id="ui">
-  <div id="scene-label"></div>
-  <div id="intro-text">
-    <h1>These are things I wrote down.<br>They don't make sense<br>unless you try them.</h1>
-    <div id="begin-btn">begin</div>
-  </div>
-  <div id="hint"></div>
+<!-- LEFT: Live camera panel -->
+<div id="cam-panel">
+  <video id="webcam" autoplay playsinline muted></video>
+  <div id="cam-overlay"></div>
 </div>
 
-<!-- Ephemeral scene quote -->
-<div id="scene-quote"></div>
+<!-- UI over left panel -->
+<div id="ui">
+
+  <!-- Scene label -->
+  <div id="scene-label">
+    <div class="hw-slot">
+      <img class="hw-img" id="hw-label-img" src="" alt="scene label">
+      <div class="hw-fallback" id="hw-label-fallback" style="font-size:9px;letter-spacing:0.42em;text-transform:uppercase"></div>
+    </div>
+  </div>
+
+  <!-- Intro -->
+  <div id="intro-block">
+    <!-- Title -->
+    <div id="hw-title-wrap">
+      <div class="tape"></div>
+      <div class="hw-slot">
+        <!--
+          ↓ REPLACE src WITH: handwriting/title.png
+            Suggested text: "these are things i wrote down.
+                             they don't make sense
+                             unless you try them."
+        -->
+        <img class="hw-img" src="./handwriting/title.png" alt="title">
+        <div class="hw-fallback" style="font-size:clamp(14px,2.2vw,20px);line-height:1.9;max-width:290px;text-align:center;border:none;background:none;color:rgba(255,255,255,0.52)">
+          these are things i wrote down.<br>
+          they don't make sense<br>
+          unless you try them.
+        </div>
+      </div>
+    </div>
+
+    <!-- Begin button -->
+    <div id="begin-btn">
+      <div class="hw-slot">
+        <!--
+          ↓ REPLACE src WITH: handwriting/begin.png
+            Suggested text: "begin"
+        -->
+        <img class="hw-img" src="./handwriting/begin.png" alt="begin">
+        <div class="hw-fallback">begin</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene hint (bottom) -->
+  <div id="hint">
+    <div class="hw-slot" id="hint-slot">
+      <img class="hw-img" id="hw-hint-img" src="" alt="hint">
+      <div class="hw-fallback" id="hw-hint-fallback"></div>
+    </div>
+  </div>
+
+  <!-- Ephemeral scene quote -->
+  <div id="scene-quote">
+    <div class="hw-slot" id="quote-slot">
+      <img class="hw-img" id="hw-quote-img" src="" alt="quote">
+      <div class="hw-fallback" id="hw-quote-fallback"></div>
+    </div>
+  </div>
+
+</div>
 
 <!-- Progress dots -->
 <div id="dots">
   <div class="dot" id="dot-0"></div>
   <div class="dot" id="dot-1"></div>
   <div class="dot" id="dot-2"></div>
-  <div class="dot" id="dot-3"></div>
 </div>
 
-<!-- Reflection card -->
-<div id="ref-overlay">
-  <div id="ref-inner">
+<!-- METRICS OVERLAY (ending) -->
+<div id="metrics-overlay">
+  <div id="metrics-inner">
+
+    <!-- Card 1: Hand opens/closes -->
+    <div class="metric-card" style="left:0;top:30px;transform:rotate(-2.2deg)">
+      <div class="hw-slot">
+        <!--
+          ↓ REPLACE src WITH: handwriting/metric-hands.png
+            Suggested text: "times your hand opened & closed"
+        -->
+        <img class="hw-img" src="./handwriting/metric-hands.png" alt="hands">
+        <div class="hw-fallback">hand open / close</div>
+      </div>
+      <div class="metric-number" id="m-hands">0</div>
+    </div>
+
+    <!-- Card 2: Perspective shifts -->
+    <div class="metric-card" style="right:0;top:110px;transform:rotate(1.6deg)">
+      <div class="hw-slot">
+        <!--
+          ↓ REPLACE src WITH: handwriting/metric-persp.png
+            Suggested text: "times you shifted your view"
+        -->
+        <img class="hw-img" src="./handwriting/metric-persp.png" alt="perspective">
+        <div class="hw-fallback">perspective shifts</div>
+      </div>
+      <div class="metric-number" id="m-persp">0</div>
+    </div>
+
+    <!-- Card 3: Smiles -->
+    <div class="metric-card" style="left:15%;bottom:90px;transform:rotate(0.6deg)">
+      <div class="hw-slot">
+        <!--
+          ↓ REPLACE src WITH: handwriting/metric-smile.png
+            Suggested text: "times you smiled"
+        -->
+        <img class="hw-img" src="./handwriting/metric-smile.png" alt="smiles">
+        <div class="hw-fallback">smiles counted</div>
+      </div>
+      <div class="metric-number" id="m-smile">0</div>
+    </div>
+
+    <!-- Replay -->
+    <div id="metrics-replay" onclick="location.reload()">
+      <div class="hw-slot">
+        <!--
+          ↓ REPLACE src WITH: handwriting/again.png
+            Suggested text: "again"
+        -->
+        <img class="hw-img" src="./handwriting/again.png" alt="again">
+        <div class="hw-fallback">again</div>
+      </div>
+    </div>
+
+    <!-- Optional Gemini reflection -->
     <p id="ref-text"><span id="ref-loading">reading between the lines —</span></p>
-    <div id="ref-footer">close your eyes. then open them.</div>
-    <div id="ref-replay" onclick="location.reload()">again</div>
+
   </div>
 </div>
 
-<!-- ═══════════════════ LIBRARIES ═══════════════════ -->
+<!-- ═══ LIBRARIES ═══ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
@@ -235,785 +481,662 @@ canvas { position:fixed; top:0; left:0; z-index:1; }
 <script>
 'use strict';
 
-/* ══════════════════════════════════════════════════════
-   ① CONFIG — replace YOUR_GEMINI_API_KEY
-══════════════════════════════════════════════════════ */
-const CFG = {
-  GEMINI_KEY  : 'YOUR_GEMINI_API_KEY',
-  GEMINI_MODEL: 'gemini-2.0-flash',
+/*
+══════════════════════════════════════════════════
+  GOOGLE AI STUDIO — GET YOUR FREE API KEY
+══════════════════════════════════════════════════
+  This project uses Gemini to write a short poetic
+  reflection from your gesture data at the ending.
+  It's OPTIONAL — a fallback text is used if empty.
 
-  // How long each scene lasts (frames at ~60fps)
+  Steps to get your free key:
+  1. Visit  https://aistudio.google.com/
+  2. Sign in with any Google account
+  3. Click  "Get API key"  in the left sidebar
+  4. Click  "Create API key" → copy it
+  5. Paste it into CFG.GEMINI_KEY below
+
+  Free tier: 1,500 requests/day, no credit card needed.
+  Model used: gemini-2.0-flash (fast + cheap)
+══════════════════════════════════════════════════
+*/
+const CFG = {
+  GEMINI_KEY  : 'AIzaSyAiIzJQ2BtuDslgY_SOTYy37_W9lV5gGiM',           // ← paste from aistudio.google.com
+  GEMINI_MODEL: 'gemini-2.0-flash',
   SCENE_DUR: {
-    control    : 660,   // ~11s
-    perspective: 660,
-    lightness  : 660,
-    avoidance  : 540    // ~9s
+    control    : 600,         // ~10s at 60fps
+    perspective: 600,
+    lightness  : 600,
   }
 };
 
-/* ══════════════════════════════════════════════════════
-   ② GLOBAL STATE
-══════════════════════════════════════════════════════ */
+/* ──────────────────────
+   GLOBAL SENSOR STATE
+────────────────────── */
 const S = {
-  scene     : 'intro',
-  sceneFrame: 0,
-
-  // ── Gesture inputs (written by MediaPipe, read by p5) ──
-  fist  : 0,      // 0 = open hand … 1 = full fist
-  headX : 0,      // −1 (left) … +1 (right)
-  headY : 0,      // −1 (up)   … +1 (down)
-  smile : 0,      // 0 = neutral … 1 = big smile
-  hand  : null,   // {x,y} in screen pixels, or null
-
-  // ── Analytics for Gemini ──
-  fistSum : 0, fistN : 0,
-  perspSum: 0, perspN: 0,
-  smileSum: 0, smileN: 0,
-  catches : 0, misses: 0,
+  scene:'intro', sceneFrame:0,
+  fist:0, headX:0, headY:0, smile:0,
 };
 
-/* ══════════════════════════════════════════════════════
-   ③ SCENE METADATA
-══════════════════════════════════════════════════════ */
-const SCENE_ORDER = ['intro','control','perspective','lightness','avoidance','ending'];
+/* ──────────────────────────────────────────────────
+   GESTURE COUNTERS (hysteresis + cooldown)
 
-const SCENE_LABELS = {
+   handCount   = distinct open↔close transitions
+   perspCount  = distinct head-shift movements
+   smileCount  = distinct smiles (neutral → smiling)
+────────────────────────────────────────────────── */
+const G = {
+  prevFist:0, prevSmile:0, prevHeadX:0,
+  handCount:0, perspCount:0, smileCount:0,
+  handCooldown:0, perspCooldown:0, smileCooldown:0,
+};
+
+function trackGestures() {
+  // Hand open/close
+  if (G.handCooldown > 0) G.handCooldown--;
+  if (Math.abs(S.fist - G.prevFist) > 0.38 && G.handCooldown === 0) {
+    G.handCount++;
+    G.handCooldown = 22;
+  }
+  G.prevFist = S.fist;
+
+  // Perspective shift
+  if (G.perspCooldown > 0) G.perspCooldown--;
+  if (Math.abs(S.headX - G.prevHeadX) > 0.11 && G.perspCooldown === 0) {
+    G.perspCount++;
+    G.perspCooldown = 28;
+  }
+  G.prevHeadX = S.headX;
+
+  // Smile onset
+  if (G.smileCooldown > 0) G.smileCooldown--;
+  if (G.prevSmile < 0.35 && S.smile > 0.62 && G.smileCooldown === 0) {
+    G.smileCount++;
+    G.smileCooldown = 65;
+  }
+  G.prevSmile = S.smile;
+}
+
+/* ──────────────────────
+   SCENE CONFIG
+────────────────────── */
+const SCENE_ORDER = ['intro','control','perspective','lightness','ending'];
+
+const LABEL_SRCS = {
+  control    : './handwriting/label-control.png',
+  perspective: './handwriting/label-persp.png',
+  lightness  : './handwriting/label-light.png',
+};
+const LABEL_TEXT = {
   control    : 'I  ·  control',
   perspective: 'II  ·  perspective',
   lightness  : 'III  ·  lightness',
-  avoidance  : 'IV  ·  avoidance',
 };
-const SCENE_QUOTES = {
+
+const HINT_SRCS = {
+  control    : './handwriting/hint-control.png',
+  perspective: './handwriting/hint-persp.png',
+  lightness  : './handwriting/hint-light.png',
+};
+const HINT_TEXT = {
+  control    : 'close your hand — then open it',
+  perspective: 'move your head slowly side to side',
+  lightness  : 'let yourself smile',
+};
+
+const QUOTE_SRCS = {
+  control    : './handwriting/quote-control.png',
+  perspective: './handwriting/quote-persp.png',
+  lightness  : './handwriting/quote-light.png',
+};
+const QUOTE_TEXT = {
   control    : '"the more tightly you hold on, the more things go haywire"',
   perspective: '"when things don\'t make sense, shift perspective"',
   lightness  : '"take things lightly"',
-  avoidance  : '"stop avoiding the inevitable"',
-};
-const SCENE_HINTS = {
-  control    : 'close your hand — then open it',
-  perspective: 'move your head slowly from side to side',
-  lightness  : 'let yourself smile',
-  avoidance  : 'reach out and catch what comes',
 };
 
-/* ══════════════════════════════════════════════════════
-   ④ MEDIAPIPE
-══════════════════════════════════════════════════════ */
+/* ──────────────────────
+   IMAGE BROKEN HANDLER
+────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.hw-img').forEach(img => {
+    img.addEventListener('error', () => {
+      img.setAttribute('data-broken','1');
+      img.style.display='none';
+      const fb = img.nextElementSibling;
+      if (fb && fb.classList.contains('hw-fallback')) fb.style.display='';
+    });
+    // Also mark if src is empty
+    if (!img.src || img.src === window.location.href) {
+      img.setAttribute('data-broken','1');
+      img.style.display='none';
+      const fb = img.nextElementSibling;
+      if (fb && fb.classList.contains('hw-fallback')) fb.style.display='';
+    }
+  });
+});
+
+/* ──────────────────────
+   MEDIAPIPE
+────────────────────── */
 let mpHands, mpFace, mpCam;
 
 function initMediaPipe() {
   const video = document.getElementById('webcam');
 
-  // ── Hands (used in scenes 1 & 4) ──────────────
   mpHands = new Hands({
     locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
   });
   mpHands.setOptions({
-    maxNumHands: 1,
-    modelComplexity: 1,
-    minDetectionConfidence: 0.7,
-    minTrackingConfidence : 0.5
+    maxNumHands:1, modelComplexity:1,
+    minDetectionConfidence:0.70, minTrackingConfidence:0.50
   });
-  mpHands.onResults(results => {
-    if (results.multiHandLandmarks?.length) {
-      const lm  = results.multiHandLandmarks[0];
+  mpHands.onResults(r => {
+    if (r.multiHandLandmarks?.length) {
+      const lm = r.multiHandLandmarks[0];
       S.fist = calcFist(lm);
-      // Use middle-finger MCP (9) as palm center; mirror X for selfie view
-      const palm = lm[9];
-      S.hand = { x: (1 - palm.x) * innerWidth, y: palm.y * innerHeight };
     } else {
       S.fist = 0;
-      S.hand = null;
     }
+    trackGestures();
   });
 
-  // ── Face Mesh (used in scenes 2 & 3) ──────────
   mpFace = new FaceMesh({
     locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
   });
   mpFace.setOptions({
-    maxNumFaces           : 1,
-    refineLandmarks       : true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence : 0.5
+    maxNumFaces:1, refineLandmarks:true,
+    minDetectionConfidence:0.50, minTrackingConfidence:0.50
   });
-  mpFace.onResults(results => {
-    if (results.multiFaceLandmarks?.length) {
-      const lm  = results.multiFaceLandmarks[0];
-      const nose = lm[1];
-      S.headX =  -(nose.x - 0.5) * 2;   // mirrored → left is negative
-      S.headY =   (nose.y - 0.46) * 2;
+  mpFace.onResults(r => {
+    if (r.multiFaceLandmarks?.length) {
+      const lm = r.multiFaceLandmarks[0];
+      S.headX = -(lm[1].x - 0.5) * 2;
+      S.headY =  (lm[1].y - 0.46) * 2;
       S.smile = calcSmile(lm);
     } else {
       S.headX = 0; S.headY = 0; S.smile = 0;
     }
+    trackGestures();
   });
 
-  // ── Shared camera feed ─────────────────────────
   mpCam = new Camera(video, {
     onFrame: async () => {
       const sc = S.scene;
-      if (sc === 'control' || sc === 'avoidance') {
-        await mpHands.send({ image: video });
-      } else if (sc === 'perspective' || sc === 'lightness') {
-        await mpFace.send({ image: video });
-      }
+      if (sc === 'control')                       await mpHands.send({ image:video });
+      else if (sc === 'perspective' || sc === 'lightness') await mpFace.send({ image:video });
     },
-    width: 640, height: 480
+    width:640, height:480
   });
-  mpCam.start().catch(err => console.warn('Camera start failed:', err));
+  mpCam.start().catch(e => console.warn('Camera:', e));
 }
 
-// ── Gesture calculators ───────────────────────────
-
-/** Returns 0 (open) → 1 (full fist)
- *  Logic: in normalised MediaPipe coords, y increases downward.
- *  A curled finger has its tip BELOW its PIP joint → tip.y > pip.y. */
 function calcFist(lm) {
-  const pairs = [[8,6],[12,10],[16,14],[20,18]]; // [tip, pip]
-  const curled = pairs.filter(([tip, pip]) => lm[tip].y > lm[pip].y).length;
-  return curled / 4;
+  return [[8,6],[12,10],[16,14],[20,18]]
+    .filter(([t,p]) => lm[t].y > lm[p].y).length / 4;
 }
-
-/** Returns 0 (neutral) → 1 (big smile)
- *  Uses ratio of mouth width to mouth opening height. */
 function calcSmile(lm) {
-  const mw    = Math.abs(lm[291].x - lm[61].x);     // corner to corner
-  const mh    = Math.abs(lm[14].y  - lm[13].y) + 0.001; // lip open
-  const ratio = mw / mh;
-  // neutral ≈ 2, gentle smile ≈ 4, big smile ≈ 7+
-  return Math.max(0, Math.min(1, (ratio - 2.0) / 5.0));
+  const mw = Math.abs(lm[291].x - lm[61].x);
+  const mh = Math.abs(lm[14].y  - lm[13].y) + 0.001;
+  return Math.max(0, Math.min(1, (mw / mh - 2.0) / 5.0));
 }
 
-/* ══════════════════════════════════════════════════════
-   ⑤ SCENE TRANSITIONS & UI
-══════════════════════════════════════════════════════ */
+/* ──────────────────────
+   SCENE TRANSITIONS
+────────────────────── */
 function goScene(name) {
   const veil = document.getElementById('veil');
   veil.classList.add('on');
-
   setTimeout(() => {
-    S.scene      = name;
-    S.sceneFrame = 0;
+    S.scene = name; S.sceneFrame = 0;
     updateUI(name);
     setTimeout(() => veil.classList.remove('on'), 200);
-  }, 660);
+  }, 700);
 }
 
 function updateUI(name) {
-  document.getElementById('scene-label').textContent = SCENE_LABELS[name] || '';
-  document.getElementById('hint').textContent        = SCENE_HINTS[name]  || '';
-
-  // Intro block visibility
-  const introEl = document.getElementById('intro-text');
-  if (name === 'intro') {
-    introEl.style.opacity       = '1';
-    introEl.style.pointerEvents = 'all';
+  // ── Label ──
+  const labelWrap = document.getElementById('scene-label');
+  const labelImg  = document.getElementById('hw-label-img');
+  const labelFb   = document.getElementById('hw-label-fallback');
+  if (LABEL_TEXT[name]) {
+    labelImg.src  = LABEL_SRCS[name];
+    labelFb.textContent = LABEL_TEXT[name];
+    labelWrap.style.opacity = '1';
   } else {
-    introEl.style.opacity       = '0';
-    introEl.style.pointerEvents = 'none';
+    labelWrap.style.opacity = '0';
   }
 
-  // Ephemeral scene quote
-  if (SCENE_QUOTES[name]) {
-    const qEl = document.getElementById('scene-quote');
-    qEl.textContent = SCENE_QUOTES[name];
+  // ── Intro visibility ──
+  const intro = document.getElementById('intro-block');
+  intro.style.opacity = name === 'intro' ? '1' : '0';
+  intro.style.pointerEvents = name === 'intro' ? 'all' : 'none';
+
+  // ── Hint ──
+  const hintWrap = document.getElementById('hint');
+  const hintImg  = document.getElementById('hw-hint-img');
+  const hintFb   = document.getElementById('hw-hint-fallback');
+  if (HINT_TEXT[name]) {
+    hintImg.src = HINT_SRCS[name];
+    hintFb.textContent = HINT_TEXT[name];
+    hintWrap.style.opacity = '1';
+  } else {
+    hintWrap.style.opacity = '0';
+  }
+
+  // ── Ephemeral quote ──
+  if (QUOTE_TEXT[name]) {
+    const qEl  = document.getElementById('scene-quote');
+    const qImg = document.getElementById('hw-quote-img');
+    const qFb  = document.getElementById('hw-quote-fallback');
+    qImg.src = QUOTE_SRCS[name];
+    qFb.textContent = QUOTE_TEXT[name];
     qEl.classList.remove('show');
-    void qEl.offsetWidth; // reflow
+    void qEl.offsetWidth;
     setTimeout(() => {
       qEl.classList.add('show');
-      setTimeout(() => qEl.classList.remove('show'), 5000);
-    }, 800);
+      setTimeout(() => qEl.classList.remove('show'), 5500);
+    }, 900);
   }
 
-  // Progress dots (0=control … 3=avoidance)
-  const order = ['control','perspective','lightness','avoidance'];
-  order.forEach((sc, i) => {
-    const d = document.getElementById(`dot-${i}`);
-    if (d) d.classList.toggle('active', sc === name);
+  // ── Dots ──
+  ['control','perspective','lightness'].forEach((sc, i) => {
+    document.getElementById(`dot-${i}`)?.classList.toggle('active', sc === name);
   });
 
-  if (name === 'ending') triggerReflection();
+  if (name === 'ending') triggerEnding();
 }
 
-/* ══════════════════════════════════════════════════════
-   ⑥ GEMINI API — REFLECTION
-══════════════════════════════════════════════════════ */
-async function callGemini(prompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.GEMINI_MODEL}:generateContent?key=${CFG.GEMINI_KEY}`;
-  const res = await fetch(url, {
-    method : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body   : JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 1.2, maxOutputTokens: 230, topP: 0.92 }
-    })
-  });
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-  const d = await res.json();
-  return d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+/* ──────────────────────
+   ENDING + GEMINI
+────────────────────── */
+function triggerEnding() {
+  // Fill in counts
+  document.getElementById('m-hands').textContent = G.handCount;
+  document.getElementById('m-persp').textContent = G.perspCount;
+  document.getElementById('m-smile').textContent = G.smileCount;
+
+  document.getElementById('metrics-overlay').classList.add('show');
+
+  // Gemini reflection (optional — only if key is set)
+  if (CFG.GEMINI_KEY) {
+    callGemini();
+  } else {
+    // No key: hide the loading line
+    document.getElementById('ref-text').innerHTML = '';
+  }
 }
 
-/** Build a prompt from analytics, asking Gemini for a poetic reflection. */
-function buildPrompt() {
-  const fPct = S.fistN  ? Math.round((S.fistSum  / S.fistN)  * 100) : 0;
-  const pAmt = S.perspN ? (S.perspSum / S.perspN).toFixed(2)         : '0.00';
-  const sPct = S.smileN ? Math.round((S.smileSum / S.smileN) * 100)  : 0;
-  const tot  = S.catches + S.misses;
-  const cPct = tot ? Math.round((S.catches / tot) * 100) : 0;
+async function callGemini() {
+  const prompt = `
+Write a 3-sentence poetic fragment (under 60 words total) for someone who just completed a body-tracking experience.
 
-  return `
-Write a short poetic reflection (4–5 sentences, under 90 words) for someone who just completed an intimate body-tracking experience. 
+Their data:
+- opened/closed hand ${G.handCount} times
+- shifted gaze/head ${G.perspCount} times  
+- smiled ${G.smileCount} times
 
 Rules:
-- Begin mid-thought. Not with "You" or "There" or "In the".
-- Use the word "you" at most once.
-- Tone: quiet, slightly unsettling, not fully accurate but believable — like something half-remembered.
-- No advice. No diagnosis. No bullet points.
-- Do not reference "the experience", "sensors", "tracking", or technology in any way.
-
-Behavioural data (transform into felt sensation — do not mention the data):
-- Grip tightness: ${fPct}% of the time
-- Head movement magnitude: ${pAmt}/1.0
-- Smile intensity: ${sPct}% of the time  
-- Catching: caught ${cPct}% of things that came toward them (${S.catches} caught, ${S.misses} missed)
-
-Write only the reflection text. Nothing else.
+- Begin mid-thought, not with "You" or "There"
+- Use "you" at most once total
+- One sentence each: about hands, about looking, about something soft
+- Tone: quiet, slightly strange, not fully accurate but believable
+- No data. No advice. No mention of tracking or technology.
+Write only the reflection text.
 `.trim();
-}
-
-const FALLBACKS = [
-  "Something in the reaching forward — and the pulling back — and the reaching again. The shape a hand makes when it thinks no one is watching. There was a structure there all along. You just needed to look at it sideways. That's the part that stays.",
-  "Tighter than expected. The body knows before the mind does — that's just the order of things. When it moved, the room shifted too, a little. Not in the dramatic way. In the way a sentence shifts when you finally find the right word for what was always already true.",
-  "It arrives whether you are ready or not. Something in the jaw knows this before the hands do. The stillness, when it came, was not peace — it was decision. There is a difference. Most people don't notice. You noticed, just late.",
-];
-
-async function triggerReflection() {
-  const overlay = document.getElementById('ref-overlay');
-  const textEl  = document.getElementById('ref-text');
-
-  overlay.classList.add('show');
 
   try {
-    const text = await callGemini(buildPrompt());
-    if (text) {
-      textEl.innerHTML = text;
-    } else { throw new Error('empty'); }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${CFG.GEMINI_MODEL}:generateContent?key=${CFG.GEMINI_KEY}`;
+    const res = await fetch(url, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        contents:[{parts:[{text:prompt}]}],
+        generationConfig:{temperature:1.15, maxOutputTokens:140, topP:0.92}
+      })
+    });
+    const d = await res.json();
+    const text = d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    document.getElementById('ref-text').innerHTML = text || getFallback();
   } catch {
-    textEl.innerHTML = FALLBACKS[Math.floor(Math.random() * FALLBACKS.length)];
+    document.getElementById('ref-text').innerHTML = getFallback();
   }
 }
 
-/* ══════════════════════════════════════════════════════
-   ⑦ p5.js SKETCH
-      All generative visuals live here.
-      Reads from S (global state) every frame.
-══════════════════════════════════════════════════════ */
+function getFallback() {
+  const f = [
+    "The hand remembers what it held, even after it opened. Something in the turning — the way the eyes kept finding a different angle — suggests a preference for not landing anywhere. The smile, when it arrived, stayed longer than it meant to.",
+    "Whatever was gripped tightest always ended up showing itself more clearly once the grip loosened. Looking sideways at a thing changes what the thing is. There was softness somewhere in there — small, but present, and not faked.",
+    "Fingers know the difference between holding on and holding still, even when the mind doesn't. The head moves before the thought does; that's always been true. Something arrived quietly and was allowed, just once, to stay.",
+  ];
+  return f[Math.floor(Math.random() * f.length)];
+}
+
+/* ══════════════════════════════════════════════════
+   p5.js SKETCH — RIGHT PANEL (gen art)
+   Canvas = 50vw × 100vh, positioned top:0 right:0
+══════════════════════════════════════════════════ */
 new p5(p => {
 
-  // ── Shared particle pool ─────────────────────
-  let pts = [];
+  let pts=[], noiseT=0, prevScene='';
+  let chaos=0, rotY=0, rotX=0, smileLerp=0, floaters=[];
+  let cloud=[];
 
-  // ── Noise time (advances each frame) ────────
-  let noiseT = 0;
-
-  // ── Scene change detection ───────────────────
-  let prevScene = '';
-
-  // ── Scene 1 state ────────────────────────────
-  let chaos = 0;   // lerped fist value
-
-  // ── Scene 2 state ────────────────────────────
-  let cloud = [];  // 3D point cloud
-  let rotY  = 0;   // camera rotation angles (lerped from head)
-  let rotX  = 0;
-
-  // ── Scene 3 state ────────────────────────────
-  let smileLerp = 0;
-  let floaters  = [];
-
-  // ── Scene 4 state ────────────────────────────
-  let targets    = [];
-  let spawnClock = 0;
-
-  // ── Setup ─────────────────────────────────────
   p.setup = () => {
-    const cnv = p.createCanvas(p.windowWidth, p.windowHeight);
-    cnv.elt.style.cssText = 'position:fixed;top:0;left:0;z-index:1;';
+    const cnv = p.createCanvas(Math.floor(p.windowWidth/2), p.windowHeight);
+    cnv.elt.style.cssText = 'position:fixed;top:0;right:0;z-index:1;display:block;';
     p.colorMode(p.RGB, 255, 255, 255, 255);
 
-    // Build 3D cloud for scene 2.
-    // Distribute points on 3 concentric sphere shells → reveals geometry at angles.
+    // Build 3D point cloud for scene 2
     for (let i = 0; i < 340; i++) {
       const theta = p.random(p.TWO_PI);
       const phi   = p.acos(p.random(-1, 1));
-      const r     = p.random([0.36, 0.64, 0.92]) + p.random(-0.04, 0.04);
+      const r     = p.random([0.36,0.64,0.92]) + p.random(-0.04,0.04);
       cloud.push({
-        ox: r * Math.sin(phi) * Math.cos(theta),
-        oy: r * Math.sin(phi) * Math.sin(theta),
-        oz: r * Math.cos(phi),
+        ox: r*Math.sin(phi)*Math.cos(theta),
+        oy: r*Math.sin(phi)*Math.sin(theta),
+        oz: r*Math.cos(phi),
         x:0, y:0, z:0,
-        drift: p.random(0.5, 2.0)
+        drift: p.random(0.5,2.0)
       });
     }
   };
 
-  p.windowResized = () => p.resizeCanvas(p.windowWidth, p.windowHeight);
+  p.windowResized = () => {
+    p.resizeCanvas(Math.floor(p.windowWidth/2), p.windowHeight);
+  };
 
-  // ── Main draw loop ─────────────────────────────
   p.draw = () => {
     const scene = S.scene;
 
-    // ── On scene change: clear transient state ──
+    // Reset on scene change
     if (scene !== prevScene) {
-      pts       = [];
-      floaters  = [];
-      targets   = [];
-      chaos     = 0;
-      smileLerp = 0;
-      rotY = rotX = 0;
-      spawnClock = 0;
-      prevScene  = scene;
+      pts=[]; floaters=[]; chaos=0; smileLerp=0;
+      rotY=0; rotX=0;
+      prevScene = scene;
     }
 
-    // ── Dispatch to scene draw fn ──
     if      (scene === 'intro')       drawIntro();
     else if (scene === 'control')     drawControl();
     else if (scene === 'perspective') drawPerspective();
     else if (scene === 'lightness')   drawLightness();
-    else if (scene === 'avoidance')   drawAvoidance();
     else if (scene === 'ending')      drawEnding();
 
-    // ── Auto-advance scene on timer ──
+    // Auto-advance
     if (CFG.SCENE_DUR[scene]) {
       S.sceneFrame++;
       if (S.sceneFrame >= CFG.SCENE_DUR[scene]) {
         const idx = SCENE_ORDER.indexOf(scene);
-        if (idx < SCENE_ORDER.length - 1) {
-          goScene(SCENE_ORDER[idx + 1]);
-        }
-        S.sceneFrame = 0; // prevent repeated trigger while transitioning
+        if (idx < SCENE_ORDER.length - 1) goScene(SCENE_ORDER[idx+1]);
+        S.sceneFrame = 0;
       }
     }
-
     noiseT += 0.0024;
   };
 
-  /* ════════════════════════════════════════════
-     SCENE — INTRO
-     Slow, sparse Perlin drift. Almost nothing.
-  ════════════════════════════════════════════ */
+  /* ── SCENE: INTRO ─────────────────────────────
+     Slow sparse Perlin drift. Cut-paste: occasional
+     faint rectangle outlines, like torn scraps.
+  ─────────────────────────────────────────────── */
   function drawIntro() {
-    p.background(0, 0, 0, 18);
+    p.background(0,0,0,12);
 
-    if (p.frameCount % 16 === 0 && pts.length < 80) {
+    if (p.frameCount % 20 === 0 && pts.length < 70) {
       spawn(p.random(p.width), p.random(p.height), {
-        size: p.random(0.8, 2.2), decay: 0.0022,
-        col: [225, 222, 215], alpha: 0.28
+        size: p.random(0.7,2.2), decay:0.002,
+        col:[210,205,195], alpha:0.26
       });
     }
-    renderPts(0.0007, 0.1);
+
+    // Occasional faint paper-scrap rectangles
+    if (p.frameCount % 80 === 0) {
+      p.noFill();
+      p.stroke(255,255,255,5); p.strokeWeight(0.6);
+      p.rect(
+        p.random(p.width*0.15, p.width*0.65),
+        p.random(p.height*0.15, p.height*0.65),
+        p.random(36,110), p.random(24,70)
+      );
+    }
+
+    renderPts(0.0006, 0.09);
   }
 
-  /* ════════════════════════════════════════════
-     SCENE 1 — CONTROL
-     Fist → chaos. Open hand → flow.
-
-     Mapping:
-       fist 0   → noiseScale=0.0006, speed=0.22, cool blue-white particles, flow lines visible
-       fist 0.5 → distortion rings appear
-       fist 1.0 → noiseScale=0.005,  speed=3.0,  red-orange particles, all rings active
-  ════════════════════════════════════════════ */
+  /* ── SCENE 1: CONTROL ─────────────────────────
+     Fist → chaos. Cut-paste: angular rect flashes
+     at high chaos, like collage scraps vibrating.
+  ─────────────────────────────────────────────── */
   function drawControl() {
     chaos = p.lerp(chaos, S.fist, 0.07);
+    p.background(0,0,0, p.map(chaos,0,1,10,34));
 
-    // ── Analytics ──
-    S.fistSum += S.fist;
-    S.fistN++;
+    const ns  = p.map(chaos, 0,1, 0.00055,0.005);
+    const spd = p.map(chaos, 0,1, 0.18, 3.0);
 
-    // ── Background: trail persistence increases with chaos ──
-    p.background(0, 0, 0, p.map(chaos, 0, 1, 11, 36));
-
-    const ns  = p.map(chaos, 0, 1, 0.00055, 0.005);
-    const spd = p.map(chaos, 0, 1, 0.20, 3.2);
-
-    // ── Spawn particles ──
-    const rate = Math.max(1, Math.round(p.map(chaos, 0, 1, 8, 1)));
+    // Spawn flow particles
+    const rate = Math.max(1, Math.round(p.map(chaos,0,1,9,1)));
     if (p.frameCount % rate === 0) {
-      const count = chaos > 0.6 ? 6 : 2;
+      const count = chaos > 0.6 ? 5 : 2;
       for (let i = 0; i < count; i++) {
-        const r2 = p.map(chaos, 0, 1, 160, 255);
-        const g2 = p.map(chaos, 0, 1, 188, 28);
-        const b2 = p.map(chaos, 0, 1, 248, 12);
         spawn(p.random(p.width), p.random(p.height), {
-          size : p.map(chaos, 0, 1, 1.4, 9) + p.random(-0.8, 1.5),
-          decay: p.map(chaos, 0, 1, 0.003, 0.022),
-          col  : [r2 + p.random(-20, 20), g2, b2],
-          alpha: p.map(chaos, 0, 1, 0.42, 1.0)
+          size : p.map(chaos,0,1,1.2,8) + p.random(-0.8,1.5),
+          decay: p.map(chaos,0,1,0.003,0.022),
+          col  : [
+            p.map(chaos,0,1,152,255),
+            p.map(chaos,0,1,188,24),
+            p.map(chaos,0,1,248,10)
+          ],
+          alpha: p.map(chaos,0,1,0.4,1.0)
         });
       }
     }
 
-    // ── Calm: directional flow lines ──
+    // Calm: directional flow lines
     if (chaos < 0.45) {
-      const lineAlpha = p.map(chaos, 0, 0.45, 30, 3);
-      p.stroke(145, 195, 255, lineAlpha);
-      p.strokeWeight(0.4);
-      for (let c = 0; c < 26; c++) {
-        for (let r = 0; r < 18; r++) {
-          const x = (c / 26) * p.width;
-          const y = (r / 18) * p.height;
-          const a = p.noise(x * ns, y * ns, noiseT) * p.TWO_PI * 4;
-          const len = 20 * (1 - chaos);
-          p.line(x, y, x + Math.cos(a) * len, y + Math.sin(a) * len);
+      const la = p.map(chaos,0,0.45,26,2);
+      p.stroke(138,188,255,la); p.strokeWeight(0.4);
+      for (let c=0; c<22; c++) {
+        for (let r=0; r<16; r++) {
+          const x=(c/22)*p.width, y=(r/16)*p.height;
+          const a = p.noise(x*ns,y*ns,noiseT)*p.TWO_PI*4;
+          const len = 17*(1-chaos);
+          p.line(x,y, x+Math.cos(a)*len, y+Math.sin(a)*len);
         }
       }
     }
 
     renderPts(ns, spd);
 
-    // ── Chaotic distortion rings ──
+    // Chaos: distortion rings
     if (chaos > 0.40) {
-      const c2 = (chaos - 0.40) / 0.60;
+      const c2 = (chaos - 0.40)/0.60;
       p.noFill();
-      for (let ring = 0; ring < 5; ring++) {
-        p.stroke(255, 18 + ring * 14, 6, c2 * 60);
-        p.strokeWeight(c2 * 3.2);
+      for (let ring=0; ring<5; ring++) {
+        p.stroke(255, 16+ring*14, 6, c2*52);
+        p.strokeWeight(c2*3.0);
         p.beginShape();
-        for (let a = 0; a <= p.TWO_PI + 0.1; a += 0.20) {
-          const baseR = 50 + ring * 48;
-          const rad   = baseR + p.noise(a * 0.72, ring * 1.3, noiseT * (2 + ring * 0.5)) * 75 * c2;
-          const jit   = c2 * 14;
+        for (let a=0; a<=p.TWO_PI+0.1; a+=0.20) {
+          const rad = 44+ring*42 + p.noise(a*0.72, ring*1.3, noiseT*(2+ring*0.5))*68*c2;
+          const jit = c2*11;
           p.curveVertex(
-            p.width/2  + Math.cos(a) * rad + p.random(-jit, jit),
-            p.height/2 + Math.sin(a) * rad + p.random(-jit, jit)
+            p.width/2  + Math.cos(a)*rad + p.random(-jit,jit),
+            p.height/2 + Math.sin(a)*rad + p.random(-jit,jit)
           );
         }
         p.endShape(p.CLOSE);
       }
     }
+
+    // Cut-paste: vibrating rectangle scraps at high chaos
+    if (chaos > 0.68 && p.frameCount % 11 === 0) {
+      p.noFill();
+      p.stroke(255, 40+p.random(60), 0, chaos*38);
+      p.strokeWeight(0.7+chaos);
+      const bx = p.random(p.width*0.6)+p.width*0.08;
+      const by = p.random(p.height*0.6)+p.height*0.08;
+      p.rect(bx, by, p.random(28,88), p.random(18,58));
+      // second offset copy — collage double-exposure feel
+      p.stroke(255,255,255,chaos*10);
+      p.rect(bx+p.random(-5,5), by+p.random(-5,5), p.random(28,88), p.random(18,58));
+    }
   }
 
-  /* ════════════════════════════════════════════
-     SCENE 2 — PERSPECTIVE
+  /* ── SCENE 2: PERSPECTIVE ─────────────────────
      3D point cloud on sphere shells.
-     Head rotation reveals structure.
-
-     Mapping:
-       headX/Y  → rotY/X (camera orbit)
-       still    → dim, close to flat, hard to read
-       moving   → brightens, edges pop, spatial depth emerges
-  ════════════════════════════════════════════ */
+     Head tilt/turn orbits the "camera".
+  ─────────────────────────────────────────────── */
   function drawPerspective() {
-    p.background(0, 0, 0, 17);
+    p.background(0,0,0,16);
+    rotY = p.lerp(rotY, S.headX*0.95, 0.04);
+    rotX = p.lerp(rotX, S.headY*0.55, 0.04);
+    const mvt = Math.abs(rotY)+Math.abs(rotX);
 
-    rotY = p.lerp(rotY, S.headX * 0.98, 0.04);
-    rotX = p.lerp(rotX, S.headY * 0.58, 0.04);
+    const cx=p.width/2, cy=p.height/2, FOV=470;
 
-    const mvt = Math.abs(rotY) + Math.abs(rotX);
-    S.perspSum += mvt;
-    S.perspN++;
-
-    const cx = p.width / 2, cy = p.height / 2, FOV = 530;
-
-    // ── 3D→2D projection (rotate Y then X) ──
-    function project(px, py, pz) {
-      const cy_ = Math.cos(rotY), sy_ = Math.sin(rotY);
-      const x2  = px * cy_ - pz * sy_;
-      const z2  = px * sy_ + pz * cy_;
-      const cx_ = Math.cos(rotX), sx_ = Math.sin(rotX);
-      const y2  = py * cx_ - z2 * sx_;
-      const z3  = py * sx_ + z2 * cx_ + 2.4;   // push cloud away from camera
-      const sc  = FOV / (z3 + FOV * 0.35);
-      return { x: cx + x2 * sc * 235, y: cy + y2 * sc * 235, z: z3, sc };
+    function project(px,py,pz) {
+      const cy_=Math.cos(rotY), sy_=Math.sin(rotY);
+      const x2=px*cy_-pz*sy_, z2=px*sy_+pz*cy_;
+      const cx_=Math.cos(rotX), sx_=Math.sin(rotX);
+      const y2=py*cx_-z2*sx_, z3=py*sx_+z2*cx_+2.4;
+      const sc=FOV/(z3+FOV*0.35);
+      return {x:cx+x2*sc*215, y:cy+y2*sc*215, z:z3, sc};
     }
 
-    // ── Animate cloud with slow Perlin drift ──
+    // Animate cloud with slow Perlin drift
     for (const pt of cloud) {
-      const d = pt.drift * 0.28;
-      pt.x = pt.ox + (p.noise(pt.ox*2,       pt.oy*2,       noiseT*d) - 0.5) * 0.13;
-      pt.y = pt.oy + (p.noise(pt.ox*2+50,    pt.oy*2,       noiseT*d) - 0.5) * 0.13;
-      pt.z = pt.oz + (p.noise(pt.ox*2,       pt.oy*2+50,    noiseT*d) - 0.5) * 0.13;
+      const d = pt.drift*0.28;
+      pt.x = pt.ox + (p.noise(pt.ox*2,      pt.oy*2,      noiseT*d)-0.5)*0.13;
+      pt.y = pt.oy + (p.noise(pt.ox*2+50,   pt.oy*2,      noiseT*d)-0.5)*0.13;
+      pt.z = pt.oz + (p.noise(pt.ox*2,      pt.oy*2+50,   noiseT*d)-0.5)*0.13;
     }
 
-    // ── Draw edges between nearby points ──
-    const maxD       = 0.44;
-    const brightBoost = p.map(mvt, 0, 0.65, 0.5, 1.55);
-    p.strokeWeight(0.65);
-    for (let i = 0; i < cloud.length; i++) {
-      const a = cloud[i];
-      for (let j = i + 1; j < cloud.length; j++) {
-        const b = cloud[j];
-        const d = Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-        if (d < maxD) {
-          const pa = project(a.x, a.y, a.z);
-          const pb = project(b.x, b.y, b.z);
-          const al = p.map(d, 0, maxD, 72, 0) * brightBoost;
-          const bl = p.map(mvt, 0, 0.65, 170, 248);
-          p.stroke(172, 194, bl, al);
-          p.line(pa.x, pa.y, pb.x, pb.y);
+    const maxD=0.44, bb=p.map(mvt,0,0.65,0.48,1.55);
+    p.strokeWeight(0.62);
+
+    for (let i=0; i<cloud.length; i++) {
+      const a=cloud[i];
+      for (let j=i+1; j<cloud.length; j++) {
+        const b=cloud[j];
+        const d=Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z);
+        if (d<maxD) {
+          const pa=project(a.x,a.y,a.z), pb=project(b.x,b.y,b.z);
+          const al=p.map(d,0,maxD,66,0)*bb;
+          const bl=p.map(mvt,0,0.65,162,244);
+          p.stroke(165,188,bl,al);
+          p.line(pa.x,pa.y,pb.x,pb.y);
         }
       }
     }
 
-    // ── Draw nodes ──
     p.noStroke();
     for (const pt of cloud) {
-      const pr = project(pt.x, pt.y, pt.z);
-      const br = p.map(pr.z, 0.8, 4.8, 220, 40) * brightBoost;
-      const sz = p.map(pr.sc, 0.06, 2.0, 0.7, 5.8);
-      p.fill(br*0.8, br*0.9, Math.min(255, br*1.22), Math.min(255, br));
-      p.ellipse(pr.x, pr.y, sz);
+      const pr=project(pt.x,pt.y,pt.z);
+      const br=p.map(pr.z,0.8,4.8,212,36)*bb;
+      const sz=p.map(pr.sc,0.06,2.0,0.6,5.4);
+      p.fill(br*0.78, br*0.88, Math.min(255,br*1.20), Math.min(255,br));
+      p.ellipse(pr.x,pr.y,sz);
     }
   }
 
-  /* ════════════════════════════════════════════
-     SCENE 3 — LIGHTNESS
-     Smile softens rigid grid into wave field.
-     Floaters rise with smile intensity.
-
-     Mapping:
-       smile 0.0 → rigid orthogonal grid + heavy vertical bars
-       smile 0.3 → grid begins to wave, floaters emerge
-       smile 1.0 → flowing curves, luminous floaters, bars gone
-  ════════════════════════════════════════════ */
+  /* ── SCENE 3: LIGHTNESS ───────────────────────
+     Smile softens rigid grid → wave field.
+     Floaters rise with smile. Bars dissolve.
+  ─────────────────────────────────────────────── */
   function drawLightness() {
     smileLerp = p.lerp(smileLerp, S.smile, 0.045);
+    p.background(0,0,0, p.map(smileLerp,0,1,14,6));
 
-    S.smileSum += S.smile;
-    S.smileN++;
+    const cols=14, rows=10;
+    const cw=p.width/cols, ch=p.height/rows;
+    p.strokeWeight(p.map(smileLerp,0,1,1.6,0.38));
 
-    p.background(0, 0, 0, p.map(smileLerp, 0, 1, 15, 7));
+    for (let i=0; i<=cols; i++) {
+      for (let j=0; j<=rows; j++) {
+        const x=i*cw, y=j*ch;
+        const wv=p.noise(i*0.27,j*0.27,noiseT)*smileLerp*30;
+        p.stroke(255,255,255, p.map(smileLerp,0,1,50,8));
 
-    const cols = 14, rows = 10;
-    const cw   = p.width / cols, ch = p.height / rows;
-
-    // ── Grid field ──
-    p.strokeWeight(p.map(smileLerp, 0, 1, 1.7, 0.4));
-    for (let i = 0; i <= cols; i++) {
-      for (let j = 0; j <= rows; j++) {
-        const x  = i * cw, y = j * ch;
-        const wv = p.noise(i * 0.27, j * 0.27, noiseT) * smileLerp * 32;
-        const al = p.map(smileLerp, 0, 1, 52, 9);
-        p.stroke(255, 255, 255, al);
-        if (i < cols) {
+        if (i<cols) {
           if (smileLerp < 0.10) {
-            // Rigid straight lines
-            p.line(x, y, x + cw, y);
+            p.line(x,y, x+cw,y);
           } else {
-            // Soft waving curves
-            p.noFill();
-            p.beginShape();
-            p.curveVertex(x - cw,       y + wv * 0.3);
-            p.curveVertex(x,            y + wv);
-            p.curveVertex(x + cw * 0.5, y - wv * 0.5);
-            p.curveVertex(x + cw,       y + wv * 0.2);
-            p.curveVertex(x + cw * 2,   y - wv * 0.4);
+            p.noFill(); p.beginShape();
+            p.curveVertex(x-cw,       y+wv*0.3);
+            p.curveVertex(x,          y+wv);
+            p.curveVertex(x+cw*0.5,   y-wv*0.5);
+            p.curveVertex(x+cw,       y+wv*0.2);
+            p.curveVertex(x+cw*2,     y-wv*0.4);
             p.endShape();
           }
         }
-        if (j < rows && smileLerp < 0.10) {
-          p.line(x, y, x, y + ch);
-        }
+        if (j<rows && smileLerp<0.10) p.line(x,y, x,y+ch);
       }
     }
 
-    // ── Floaters rise with smile ──
-    if (smileLerp > 0.04 && p.random() < smileLerp * 0.30) {
+    // Floaters
+    if (smileLerp > 0.04 && p.random() < smileLerp*0.28) {
       floaters.push({
-        x: p.random(p.width),
-        y: p.height + p.random(12),
-        vy: -(0.45 + smileLerp * 3.0),
-        vx: p.random(-0.45, 0.45),
-        size: p.random(1.4, 3.2 + smileLerp * 5),
-        life: 1,
-        decay: 0.0038 + smileLerp * 0.01,
-        br: 165 + smileLerp * 88
+        x:p.random(p.width), y:p.height+10,
+        vy:-(0.38+smileLerp*2.8), vx:p.random(-0.4,0.4),
+        size:p.random(1.1,3+smileLerp*4.5),
+        life:1, decay:0.0038+smileLerp*0.009,
+        br:158+smileLerp*90
       });
     }
-    floaters = floaters.filter(f => f.life > 0 && f.y > -20);
+    floaters = floaters.filter(f=>f.life>0&&f.y>-20);
     for (const f of floaters) {
-      f.y    += f.vy;
-      f.x    += f.vx;
-      f.vy   -= 0.011 * smileLerp;  // become lighter as smile grows
-      f.life -= f.decay;
+      f.y+=f.vy; f.x+=f.vx; f.vy-=0.010*smileLerp; f.life-=f.decay;
       p.noStroke();
-      p.fill(f.br, f.br, f.br - 10, f.life * smileLerp * 235);
-      p.ellipse(f.x, f.y, f.size);
+      p.fill(f.br,f.br,f.br-8, f.life*smileLerp*225);
+      p.ellipse(f.x,f.y,f.size);
     }
 
-    // ── Rigid vertical bars (disappear as smile grows) ──
-    if (smileLerp < 0.24) {
-      const w = 1 - smileLerp / 0.24;
-      p.stroke(255, 255, 255, w * 22);
-      p.strokeWeight(w * 5);
-      for (let i = 1; i < 5; i++) {
-        p.line(i * p.width / 5, 0, i * p.width / 5, p.height);
-      }
+    // Dissolving vertical bars
+    if (smileLerp<0.24) {
+      const w=1-smileLerp/0.24;
+      p.stroke(255,255,255,w*20); p.strokeWeight(w*5);
+      for (let i=1;i<5;i++) p.line(i*p.width/5,0, i*p.width/5,p.height);
     }
   }
 
-  /* ════════════════════════════════════════════
-     SCENE 4 — AVOIDANCE
-     Geometric objects converge on center.
-     Hand (tracked) must intercept them.
-     Catch → gold burst. Miss → red flash.
-
-     Mapping:
-       hand near object → catch detected (radius ≈ 60px + object radius)
-       object reaches center → miss
-       pace accelerates over time
-  ════════════════════════════════════════════ */
-  function drawAvoidance() {
-    p.background(0, 0, 0, 19);
-
-    spawnClock++;
-    // Objects spawn faster as time in scene increases
-    const interval = Math.max(24, 98 - S.sceneFrame * 0.075);
-
-    // ── Spawn new target ──
-    if (spawnClock > interval) {
-      spawnClock = 0;
-      const edge = Math.floor(p.random(4));
-      let sx, sy;
-      if      (edge === 0) { sx = p.random(p.width);  sy = -48; }
-      else if (edge === 1) { sx = p.random(p.width);  sy = p.height + 48; }
-      else if (edge === 2) { sx = -48;                sy = p.random(p.height); }
-      else                  { sx = p.width + 48;       sy = p.random(p.height); }
-
-      const tx = p.width / 2, ty = p.height / 2;
-      const mag = Math.hypot(tx - sx, ty - sy);
-      const spd = p.random(1.7, 3.5);
-      targets.push({
-        x:sx, y:sy,
-        vx: (tx - sx) / mag * spd,
-        vy: (ty - sy) / mag * spd,
-        r: p.random(15, 44),
-        alpha: 0
-      });
-    }
-
-    // ── Center target rings ──
-    p.noFill();
-    p.stroke(255, 40, 25, 26); p.strokeWeight(0.8);
-    p.ellipse(p.width/2, p.height/2, 72, 72);
-    p.stroke(255, 40, 25, 11);
-    p.ellipse(p.width/2, p.height/2, 114, 114);
-
-    // ── Update & draw targets ──
-    const hp = S.hand;
-    targets = targets.filter(t => {
-      t.alpha = Math.min(1, t.alpha + 0.044);
-      t.x += t.vx; t.y += t.vy;
-
-      // Catch detection
-      if (hp && Math.hypot(t.x - hp.x, t.y - hp.y) < t.r + 62) {
-        S.catches++;
-        for (let i = 0; i < 18; i++) {
-          spawn(t.x, t.y, {
-            size: p.random(3, 11), decay: 0.048,
-            col: [255, 218, 85], alpha: 1,
-            noiseFollow: false,
-            vx: p.random(-4, 4), vy: p.random(-4, 4)
-          });
-        }
-        return false;
-      }
-
-      // Miss detection
-      if (Math.hypot(t.x - p.width/2, t.y - p.height/2) < 28) {
-        S.misses++;
-        spawn(p.width/2, p.height/2, {
-          size: 60, decay: 0.055, col: [255, 32, 12], alpha: 0.55
-        });
-        return false;
-      }
-
-      // Draw: crosshair circle
-      const al = t.alpha * 78;
-      p.noFill(); p.stroke(255, 255, 255, al); p.strokeWeight(1);
-      p.ellipse(t.x, t.y, t.r * 2);
-      p.stroke(255, 255, 255, al * 0.38); p.strokeWeight(0.5);
-      p.line(t.x - t.r, t.y, t.x + t.r, t.y);
-      p.line(t.x, t.y - t.r, t.x, t.y + t.r);
-      return true;
-    });
-
-    // ── Hand indicator ──
-    if (hp) {
-      p.noFill();
-      p.stroke(255, 255, 255, 32); p.strokeWeight(1);
-      p.ellipse(hp.x, hp.y, 124);
-      p.stroke(255, 255, 255, 14);
-      p.ellipse(hp.x, hp.y, 64);
-    }
-
-    // ── Score (minimal) ──
-    if (S.catches + S.misses > 0) {
-      p.noStroke(); p.fill(255, 255, 255, 42);
-      p.textSize(11.5); p.textAlign(p.RIGHT);
-      p.textFont('Georgia');
-      p.text(`${S.catches}  ·  ${S.misses}`, p.width - 26, 33);
-    }
-
-    renderPts(0.001, 0.42);
-  }
-
-  /* ════════════════════════════════════════════
-     SCENE — ENDING
-     Very slow, very quiet drift.
-  ════════════════════════════════════════════ */
+  /* ── SCENE: ENDING ────────────────────────────
+     Very slow, very quiet. Nearly still.
+  ─────────────────────────────────────────────── */
   function drawEnding() {
-    p.background(0, 0, 0, 5);
-    if (p.frameCount % 30 === 0 && pts.length < 55) {
+    p.background(0,0,0,4);
+    if (p.frameCount%34===0 && pts.length<40) {
       spawn(p.random(p.width), p.random(p.height), {
-        size: p.random(0.4, 1.4), decay: 0.0016,
-        col: [200, 198, 192], alpha: 0.20
+        size:p.random(0.4,1.1), decay:0.0014,
+        col:[192,188,180], alpha:0.16
       });
     }
-    renderPts(0.00048, 0.065);
+    renderPts(0.00042, 0.055);
   }
 
-  /* ════════════════════════════════════════════
-     PARTICLE SYSTEM
-  ════════════════════════════════════════════ */
-
-  /** Add a particle to the pool. */
-  function spawn(x, y, {
-    size=2, decay=0.005, col=[255,255,255], alpha=1,
-    vx=0, vy=0, noiseFollow=true
-  } = {}) {
-    pts.push({ x, y, vx, vy, size, life:1, decay, col, alpha, noiseFollow });
+  /* ── PARTICLE SYSTEM ──────────────────────── */
+  function spawn(x,y,{size=2,decay=0.005,col=[255,255,255],alpha=1,vx=0,vy=0,noiseFollow=true}={}) {
+    pts.push({x,y,vx,vy,size,life:1,decay,col,alpha,noiseFollow});
   }
 
-  /** Update & render all particles.
-   *  @param {number} ns   Noise scale (how large the swirl patterns are)
-   *  @param {number} spd  How fast particles respond to the flow field
-   */
   function renderPts(ns, spd) {
-    pts = pts.filter(pt => pt.life > 0);
+    pts = pts.filter(pt=>pt.life>0);
     for (const pt of pts) {
       if (pt.noiseFollow) {
-        const a = p.noise(pt.x * ns, pt.y * ns, noiseT) * p.TWO_PI * 4;
-        pt.vx += Math.cos(a) * spd;
-        pt.vy += Math.sin(a) * spd;
-        pt.vx *= 0.905;
-        pt.vy *= 0.905;
+        const a = p.noise(pt.x*ns, pt.y*ns, noiseT) * p.TWO_PI * 4;
+        pt.vx += Math.cos(a)*spd; pt.vy += Math.sin(a)*spd;
+        pt.vx *= 0.906; pt.vy *= 0.906;
       }
-      pt.x += pt.vx;
-      pt.y += pt.vy;
-      pt.life -= pt.decay;
+      pt.x+=pt.vx; pt.y+=pt.vy; pt.life-=pt.decay;
       p.noStroke();
-      p.fill(pt.col[0], pt.col[1], pt.col[2], pt.life * pt.alpha * 255);
-      p.ellipse(pt.x, pt.y, pt.size);
+      p.fill(pt.col[0],pt.col[1],pt.col[2], pt.life*pt.alpha*255);
+      p.ellipse(pt.x,pt.y,pt.size);
     }
   }
 
-}); // end p5 sketch
+}); // end p5
 
-/* ══════════════════════════════════════════════════════
-   ⑧ BOOT
-══════════════════════════════════════════════════════ */
+/* ──────────────────────
+   BOOT
+────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('begin-btn').addEventListener('click', () => {
     initMediaPipe();
